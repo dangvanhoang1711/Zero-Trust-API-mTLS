@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28-latest
+        ports:
+        - containerPort: 10000
+        volumeMounts:
+        # Gắn file cấu hình envoy.yaml từ ConfigMap
+        - name: config-volume
+          mountPath: /etc/envoy/envoy.yaml
+          subPath: envoy.yaml
+        # Gắn chứng chỉ mTLS từ Secret (được tạo tự động ở mục 2.3)
+        - name: cert-volume
+          mountPath: /etc/envoy/tls
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: envoy-config
+      - name: cert-volume
+        secret:
+          secretName: envoy-tls-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-service
+spec:
+  selector:
+    app: envoy
+  ports:
+  - protocol: TCP
+    port: 10000
+    targetPort: 10000
+  type: ClusterIP

@@ -15,6 +15,13 @@ static_resources:
             - name: local_service
               domains: ["*"]
               routes:
+              - match: { prefix: "/auth" }
+                route: 
+                  cluster: keycloak_service
+                typed_per_filter_config:
+                  envoy.filters.http.ext_authz:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                    disabled: true
               - match: { prefix: "/" }
                 route: { cluster: target_service }
           http_filters:
@@ -24,18 +31,31 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
               http_service:
                 server_uri:
-                  uri: http://ext_authz_service:5000/auth
+                  uri: http://ext-authz-service:5000/auth
                   cluster: ext-authz-cluster
                   timeout: 0.25s
                 authorization_request:  
                   allowed_headers:
                     patterns:
                     - exact: "authorization" 
-                path_ext_authz: true 
           # --- BƯỚC 2: NẾU PYTHON OK THÌ MỚI CHO ĐI TIẾP ---
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+          common_tls_context:
+            alpn_protocols: ["h2","http/1.1"]
+            tls_certificates:
+            - certificate_chain: { filename: "/etc/envoy/tls/tls.crt" }
+              private_key: { filename: "/etc/envoy/tls/tls.key" }
+            validation_context:
+              trusted_ca:
+                filename: "/etc/envoy/tls/ca.crt"
+          require_client_certificate: true
 
   clusters:
   # Định nghĩa App mục tiêu (Data Plane)
@@ -49,7 +69,19 @@ static_resources:
       - lb_endpoints:
         - endpoint:
             address:
-              socket_address: { address: resource_server, port_value: 80 }
+              socket_address: { address: resource-server, port_value: 80 }
+
+  - name: keycloak_service
+    connect_timeout: 5s
+    type: LOGICAL_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: keycloak_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address: { address: keycloak_server, port_value: 8080 }
 
   # Định nghĩa ông Thẩm định viên (Control Plane - PDP)
   - name: ext-authz-cluster
@@ -62,4 +94,4 @@ static_resources:
       - lb_endpoints:
         - endpoint:
             address:
-              socket_address: { address: ext_authz_service, port_value: 5000 }
+              socket_address: { address: ext-authz-service, port_value: 5000 }

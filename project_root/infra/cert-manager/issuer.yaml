@@ -1,0 +1,22 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: vault-issuer
+  namespace: default
+spec:
+  vault:
+    path: pki/sign/viva-role
+    server: http://vault.default.svc.cluster.local:8200
+    auth:
+      tokenSecretRef:
+        name: vault-token
+        key: token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-token
+  namespace: default
+type: Opaque
+stringData:
+  token: root

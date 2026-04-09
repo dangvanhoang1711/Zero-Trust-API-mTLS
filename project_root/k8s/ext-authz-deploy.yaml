@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ext-authz-service
+spec:
+  selector:
+    matchLabels:
+      app: ext-authz-service
+  template:
+    metadata:
+      labels:
+        app: ext-authz-service
+    spec:
+      containers:
+      - name: auth-agent
+        image: python:3.9-slim
+        command: ["python3", "-c"]
+        args:
+          - |
+            from http.server import BaseHTTPRequestHandler, HTTPServer
+            class AuthHandler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    auth = self.headers.get('Authorization')
+                    if auth == "Bearer 123": # Token hợp lệ để demo
+                        self.send_response(200); self.end_headers()
+                    else:
+                        self.send_response(403); self.end_headers()
+            HTTPServer(('0.0.0.0', 5000), AuthHandler).serve_forever()
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ext-authz-service
+spec:
+  selector:
+    app: ext-authz-service
+  ports:
+  - port: 5000
+    targetPort: 5000

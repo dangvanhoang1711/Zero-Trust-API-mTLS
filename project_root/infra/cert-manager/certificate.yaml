@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: envoy-client-cert
+  namespace: default
+spec:
+  secretName: envoy-tls-secret # Tên Secret mà K8s sẽ tự tạo để chứa cert
+  duration: 1h                # Chứng chỉ chỉ có hiệu lực 1 giờ
+  renewBefore: 15m            # Tự động xin cert mới trước khi hết hạn 15 phút
+  commonName: localhost
+  issuerRef:
+    name: vault-issuer
+    kind: Issuer

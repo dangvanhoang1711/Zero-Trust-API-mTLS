@@ -19,7 +19,7 @@ services:
       retries: 5
 
   keycloak:
-    image: quay.io/keycloak/keycloak:21.1.1
+    image: quay.io/keycloak/keycloak:26.5.7
     container_name: keycloak_server
     command: start-dev
     environment:
@@ -31,6 +31,8 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
     ports:
       - "8080:8080"
     depends_on:
@@ -42,7 +44,7 @@ services:
   ext-authz:
     build: 
       context: ../ext_authz  # Đường dẫn tới thư mục chứa Dockerfile Python
-    container_name: ext_authz_service
+    container_name: ext-authz-service
     ports:
       - "5001:5000" # Port 5001 để bạn test thử từ ngoài, 5000 để Envoy gọi nội bộ
     environment:
@@ -57,12 +59,11 @@ services:
 
   envoy-gateway:
     image: envoyproxy/envoy:v1.25-latest
-    container_name: envoy_gateway
+    container_name: envoy-gateway
     volumes:
-      # Chú ý: ../ để nhảy ra khỏi thư mục infra, tìm đến thư mục envoy_config cùng cấp
-      - ../envoy_config/envoy.yaml:/etc/envoy/envoy.yaml
+      - ../envoy_config:/etc/envoy
     ports:
-      - "80:10000" # User truy cập qua cổng 80 (HTTP chuẩn)
+      - "10000:10000"
     networks:
       - zero-trust-network
     depends_on:
@@ -70,9 +71,20 @@ services:
 
   target-app:
     image: nginxdemos/hello # Đây là một App giả lập trả về giao diện chào mừng
-    container_name: resource_server
+    container_name: resource-server
     networks:
       - zero-trust-network
+  
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "root" # Token để bạn đăng nhập
+      VAULT_ADDR: "http://0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
 
 networks:
   zero-trust-network:
