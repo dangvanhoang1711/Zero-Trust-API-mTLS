@@ -56,7 +56,7 @@ def auth(path):
     try:
         # Giải mã Token (Không check signature để Demo cho nhanh)
         token = auth_header.split(" ")[1]
-        payload = jwt.decode(token, options={"verify_signature": False})
+        payload = jwt.decode(token, algorithms=["RS256"], options={"verify_signature": False})
         
         # Gọi hàm kiểm tra chính sách
         is_allowed, message = verify_zero_trust_policy(payload)
@@ -76,7 +76,7 @@ def auth(path):
             
     except Exception as e:
         print(f"[PDP] <<< LỖI: {str(e)}")
-        return make_response(jsonify({"status": "Error"}), 500)
+        return make_response(jsonify({"status": "Denied", "reason": "Invalid Token Format"}), 403)
 
 if __name__ == '__main__':
     print("--- PDP SERVER ĐANG CHẠY TRÊN PORT 5000 ---")

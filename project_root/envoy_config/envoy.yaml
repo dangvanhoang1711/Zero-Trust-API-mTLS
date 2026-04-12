@@ -38,6 +38,7 @@ static_resources:
                   allowed_headers:
                     patterns:
                     - exact: "authorization" 
+              failure_mode_allow: false
           # --- BƯỚC 2: NẾU PYTHON OK THÌ MỚI CHO ĐI TIẾP ---
           - name: envoy.filters.http.router
             typed_config:
