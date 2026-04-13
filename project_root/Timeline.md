@@ -68,7 +68,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 2.4 Certificate Revocation
 
-- [ ] Set up **CRL (Certificate Revocation List)** or **OCSP responder** via Vault
+- [ ] Set up **CRL (Certificate Revocation List)** via Vault
 - [ ] Configure Envoy to check revocation status during TLS handshake
 - [ ] Test that revoked certs are rejected
 - [ ] Document revocation procedures in `docs/runbook.md`
