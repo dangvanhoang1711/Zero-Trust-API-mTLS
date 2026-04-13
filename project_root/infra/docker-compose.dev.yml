@@ -73,7 +73,8 @@ services:
     volumes:
       - ../../envoy_config:/etc/envoy
     ports:
-      - "10000:10000"
+      - "8443:443"
+      - "9901:9901"
     networks:
       - zero-trust-dev
     depends_on:
