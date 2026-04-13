@@ -43,13 +43,13 @@ services:
 
   ext-authz:
     build: 
-      context: ../ext_authz  # Đường dẫn tới thư mục chứa Dockerfile Python
+      context: ../ext_authz
     container_name: ext-authz-service
     ports:
       - "5001:5000" # Port 5001 để bạn test thử từ ngoài, 5000 để Envoy gọi nội bộ
     environment:
       - TZ=Asia/Ho_Chi_Minh  # <--- Thêm dòng này để ép dùng giờ VN
-      - PYTHONUNBUFFERED=1
+      - FORCE_ALLOW_FOR_DEMO=false
     volumes:
       - /etc/localtime:/etc/localtime:ro # (Tùy chọn) Đồng bộ file giờ của máy chủ
     networks:
