@@ -15,22 +15,22 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 1.1 Literature & Standards Review
 
-- [ ] Read and summarize **OAuth 2.0 (RFC 6749)** — authorization framework basics
-- [ ] Read and summarize **JWT (RFC 7519)** & **JWS (RFC 7515)** — token structure & signing
-- [ ] Read and summarize **OAuth 2.0 mTLS (RFC 8705)** — certificate-bound access tokens
-- [ ] Read and summarize **DPoP (RFC 9449)** — Demonstration of Proof-of-Possession
-- [ ] Study **holder-of-key JWT** patterns (`cnf` claim, `x5t#S256` thumbprint)
-- [ ] Study **HTTP Message Signatures (RFC 9421)** — signed HTTP requests
-- [ ] Review OWASP API Security Top 10 & NIST PKI guidelines
-- [ ] Document findings in `docs/literature-review.md`
+- [x] Read and summarize **OAuth 2.0 (RFC 6749)** — authorization framework basics
+- [x] Read and summarize **JWT (RFC 7519)** & **JWS (RFC 7515)** — token structure & signing
+- [x] Read and summarize **OAuth 2.0 mTLS (RFC 8705)** — certificate-bound access tokens
+- [x] Read and summarize **DPoP (RFC 9449)** — Demonstration of Proof-of-Possession
+- [x] Study **holder-of-key JWT** patterns (`cnf` claim, `x5t#S256` thumbprint)
+- [x] Study **HTTP Message Signatures (RFC 9421)** — signed HTTP requests
+- [x] Review OWASP API Security Top 10 & NIST PKI guidelines
+- [x] Document findings in `docs/literature-review.md`
 
 ### 1.2 Stack Decision & Justification
 
-- [ ] Compare proxy options: **Envoy** vs Kong vs NGINX (recommend Envoy for ext_authz support)
-- [ ] Compare IdP options: **Keycloak** (self-hosted) vs Auth0 (SaaS)
-- [ ] Compare ext_authz language: **Go** (performance) vs Python/Node (prototyping speed)
-- [ ] Choose token binding pattern: mTLS-bound tokens, DPoP, or HoK JWT
-- [ ] Document stack decisions in `docs/architecture-decisions.md`
+- [x] Compare proxy options: **Envoy** vs Kong vs NGINX (recommend Envoy for ext_authz support)
+- [x] Compare IdP options: **Keycloak** (self-hosted) vs Auth0 (SaaS)
+- [x] Compare ext_authz language: **Go** (performance) vs Python/Node (prototyping speed)
+- [x] Choose token binding pattern: mTLS-bound tokens, DPoP, or HoK JWT
+- [x] Document stack decisions in `docs/architecture-decisions.md`
 
 ### 1.3 Development Environment
 
@@ -40,7 +40,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
 - [ ] Install **HashiCorp Vault** (dev mode) for PKI backend
 - [ ] Install **Keycloak** (Docker) for token issuance
 - [ ] Verify all services are running and reachable
-- [ ] Create `infra/docker-compose.dev.yml` for local development
+- [x] Create `infra/docker-compose.dev.yml` for local development
 
 ---
 
@@ -48,30 +48,30 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 2.1 Certificate Authority Setup
 
-- [ ] Configure Vault as a **PKI secrets engine** (root CA + intermediate CA)
-- [ ] Create CA certificate chain (Root CA → Intermediate CA → Client/Server certs)
-- [ ] Document CA hierarchy in `docs/pki-architecture.md`
+- [x] Configure Vault as a **PKI secrets engine** (root CA + intermediate CA)
+- [x] Create CA certificate chain (Root CA → Intermediate CA → Client/Server certs)
+- [x] Document CA hierarchy in `docs/pki-architecture.md`
 
 ### 2.2 Server Certificate Provisioning
 
-- [ ] Generate server TLS certificates for the Envoy proxy
-- [ ] Configure Envoy to use server certs for TLS termination
-- [ ] Store configs in `envoy_config/tls/`
+- [x] Generate server TLS certificates for the Envoy proxy
+- [x] Configure Envoy to use server certs for TLS termination
+- [x] Store configs in `envoy_config/tls/`
 
 ### 2.3 Client Certificate Automation
 
-- [ ] Configure cert-manager **Issuer** / **ClusterIssuer** backed by Vault PKI
-- [ ] Create a **Certificate** resource template for client cert issuance
-- [ ] Automate client cert issuance for test service accounts
-- [ ] Test certificate renewal flow (short TTL → auto-renew)
-- [ ] Store Kubernetes manifests in `infra/cert-manager/`
+- [x] Configure cert-manager **Issuer** / **ClusterIssuer** backed by Vault PKI
+- [x] Create a **Certificate** resource template for client cert issuance
+- [x] Automate client cert issuance for test service accounts
+- [x] Test certificate renewal flow (short TTL → auto-renew)
+- [x] Store Kubernetes manifests in `infra/cert-manager/`
 
 ### 2.4 Certificate Revocation
 
-- [ ] Set up **CRL (Certificate Revocation List)** via Vault
-- [ ] Configure Envoy to check revocation status during TLS handshake
-- [ ] Test that revoked certs are rejected
-- [ ] Document revocation procedures in `docs/runbook.md`
+- [x] Set up **CRL (Certificate Revocation List)** via Vault
+- [x] Configure Envoy to check revocation status during TLS handshake
+- [x] Test that revoked certs are rejected
+- [x] Document revocation procedures in `docs/runbook.md`
 
 ---
 
@@ -79,7 +79,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 3.1 Project Scaffolding
 
-- [ ] Initialize Go module in `ext_authz/` (`go mod init`)
+- [x] Initialize Go module in `ext_authz/` (`go mod init`)
 - [ ] Set up project structure:
   ```
   ext_authz/
@@ -100,7 +100,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
   ├── Dockerfile
   └── go.mod
   ```
-- [ ] Add Dockerfile for the ext_authz service
+- [x] Add Dockerfile for the ext_authz service
 
 ### 3.2 JWKS Cache & JWT Verification
 
@@ -174,11 +174,11 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 5.1 Envoy Configuration
 
-- [ ] Write Envoy **listener** config with TLS + mTLS (`require_client_certificate: true`)
+- [x] Write Envoy **listener** config with TLS + mTLS (`require_client_certificate: true`)
 - [ ] Configure **ext_authz filter** pointing to the Go gRPC service
-- [ ] Configure XFCC (x-forwarded-client-cert) header forwarding
-- [ ] Set up **route rules** — different auth requirements per path/service
-- [ ] Store all configs in `envoy_config/`
+- [x] Configure XFCC (x-forwarded-client-cert) header forwarding
+- [x] Set up **route rules** — different auth requirements per path/service
+- [x] Store all configs in `envoy_config/`
 
 ### 5.2 Sample Backend Microservices
 
@@ -258,7 +258,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 - [ ] Write **`docs/architecture.md`** — system architecture diagram + component descriptions
 - [ ] Write **`docs/threat-model.md`** — threat model analysis (STRIDE or similar)
-- [ ] Write **`docs/runbook.md`** — operational runbook:
+- [x] Write **`docs/runbook.md`** — operational runbook:
   - How to issue/rotate/revoke client certificates
   - How to handle JWKS rotation
   - Rollback plan for failed deployments

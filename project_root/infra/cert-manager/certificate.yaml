@@ -1,13 +1,84 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: envoy-client-cert
+  name: envoy-server-cert
   namespace: default
 spec:
-  secretName: envoy-tls-secret # Tên Secret mà K8s sẽ tự tạo để chứa cert
-  duration: 1h                # Chứng chỉ chỉ có hiệu lực 1 giờ
-  renewBefore: 15m            # Tự động xin cert mới trước khi hết hạn 15 phút
-  commonName: localhost
+  secretName: envoy-server-tls
+  commonName: envoy-service.default.svc.cluster.local
+  dnsNames:
+    - envoy-service
+    - envoy-service.default
+    - envoy-service.default.svc
+    - envoy-service.default.svc.cluster.local
+  duration: 24h
+  renewBefore: 6h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
   issuerRef:
-    name: vault-issuer
-    kind: Issuer
+    name: vault-server-clusterissuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: envoy-client-trust
+  namespace: default
+type: Opaque
+stringData:
+  intermediate-ca.crt: |
+    REPLACE_WITH_INTERMEDIATE_CA_CERT
+  ca.crl: |
+    REPLACE_WITH_CURRENT_PEM_CRL
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: client-mtls-cert
+  namespace: default
+spec:
+  secretName: client-mtls
+  commonName: client
+  duration: 24h
+  renewBefore: 6h
+  usages:
+    - client auth
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  issuerRef:
+    name: vault-client-clusterissuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mtls-test-client
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mtls-test-client
+  template:
+    metadata:
+      labels:
+        app: mtls-test-client
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.7.1
+          command: ["sleep", "infinity"]
+          volumeMounts:
+            - name: client-cert
+              mountPath: /var/run/tls/client
+              readOnly: true
+      volumes:
+        - name: client-cert
+          secret:
+            secretName: client-mtls
