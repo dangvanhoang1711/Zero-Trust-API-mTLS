@@ -1,12 +1,13 @@
 FROM golang:1.24-alpine AS builder
-WORKDIR /app
+WORKDIR /src
+ENV PATH="/usr/local/go/bin:${PATH}"
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /ext-authz ./main.go
+COPY internal ./internal
+COPY main.go ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/ext-authz ./main.go
 
-FROM alpine:3.21
-WORKDIR /app
-COPY --from=builder /ext-authz /usr/local/bin/ext-authz
-EXPOSE 5000
-CMD ["/usr/local/bin/ext-authz"]
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /out/ext-authz /usr/local/bin/ext-authz
+EXPOSE 50051
+ENTRYPOINT ["/usr/local/bin/ext-authz"]

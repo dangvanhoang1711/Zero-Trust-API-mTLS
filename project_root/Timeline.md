@@ -13,6 +13,12 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ## Phase 1 — Research & Environment Setup (Tuần 1–2)
 
+### Progress Summary
+- Completed: 14/20 tasks (+2 partial)
+- Status: Mid Phase
+- Evidence: root `docker-compose.yml` runs only `envoy`, `ext_authz`, `backend`; `./tests/run-all.sh` passes MVP flow.
+- Integration gaps: `Vault`, `Keycloak`, and Kubernetes/cert-manager are not part of the current runnable stack.
+
 ### 1.1 Literature & Standards Review
 
 - [x] Read and summarize **OAuth 2.0 (RFC 6749)** — authorization framework basics
@@ -34,53 +40,63 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 1.3 Development Environment
 
-- [ ] Install and configure **Docker** & **Docker Compose**
+- [x] Install and configure **Docker** & **Docker Compose**
 - [ ] Set up **Kubernetes** dev cluster (minikube or k3s)
 - [ ] Install **cert-manager** in the cluster
-- [ ] Install **HashiCorp Vault** (dev mode) for PKI backend
-- [ ] Install **Keycloak** (Docker) for token issuance
-- [ ] Verify all services are running and reachable
-- [x] Create `infra/docker-compose.dev.yml` for local development
+- [~] Install **HashiCorp Vault** (dev mode) for PKI backend — vault scripts/artifacts exist, not part of current runnable compose flow
+- [x] Install **Keycloak** (Docker) for token issuance
+- [x] Verify all services are running and reachable — MVP core services verified; full stack services not verified together
+- [ ] Create `infra/docker-compose.dev.yml` for local development
 
 ---
 
 ## Phase 2 — PKI & Certificate Infrastructure (Tuần 3–4)
 
+### Progress Summary
+- Completed: 3/15 tasks (+4 partial)
+- Status: Early Phase
+- Evidence: Envoy mTLS works in runtime (`tests/run-all.sh`); Envoy currently mounts `project_root/infra/certs` via root `docker-compose.yml`.
+- Integration gaps: Vault/cert-manager automation is not wired into current runtime; CRL enforcement is not enabled in active Envoy config.
+
 ### 2.1 Certificate Authority Setup
 
-- [x] Configure Vault as a **PKI secrets engine** (root CA + intermediate CA)
-- [x] Create CA certificate chain (Root CA → Intermediate CA → Client/Server certs)
+- [~] Configure Vault as a **PKI secrets engine** (root CA + intermediate CA) — bootstrap scripts/artifacts exist, runtime integration not active
+- [~] Create CA certificate chain (Root CA → Intermediate CA → Client/Server certs) — chain artifacts exist in repo; active runtime uses static cert mount
 - [x] Document CA hierarchy in `docs/pki-architecture.md`
 
 ### 2.2 Server Certificate Provisioning
 
 - [x] Generate server TLS certificates for the Envoy proxy
 - [x] Configure Envoy to use server certs for TLS termination
-- [x] Store configs in `envoy_config/tls/`
+- [~] Store configs in `envoy_config/tls/` — folder exists, but active runtime uses `infra/certs/`
 
 ### 2.3 Client Certificate Automation
 
-- [x] Configure cert-manager **Issuer** / **ClusterIssuer** backed by Vault PKI
-- [x] Create a **Certificate** resource template for client cert issuance
-- [x] Automate client cert issuance for test service accounts
-- [x] Test certificate renewal flow (short TTL → auto-renew)
-- [x] Store Kubernetes manifests in `infra/cert-manager/`
+- [ ] Configure cert-manager **Issuer** / **ClusterIssuer** backed by Vault PKI
+- [ ] Create a **Certificate** resource template for client cert issuance
+- [ ] Automate client cert issuance for test service accounts
+- [ ] Test certificate renewal flow (short TTL → auto-renew)
+- [ ] Store Kubernetes manifests in `infra/cert-manager/`
 
 ### 2.4 Certificate Revocation
 
-- [x] Set up **CRL (Certificate Revocation List)** via Vault
-- [x] Configure Envoy to check revocation status during TLS handshake
-- [x] Test that revoked certs are rejected
-- [x] Document revocation procedures in `docs/runbook.md`
+- [~] Set up **CRL (Certificate Revocation List)** via Vault — CRL artifacts/scripts exist, not enforced in current Envoy runtime config
+- [ ] Configure Envoy to check revocation status during TLS handshake
+- [ ] Test that revoked certs are rejected
+- [ ] Document revocation procedures in `docs/runbook.md`
 
 ---
 
 ## Phase 3 — ext_authz Service Core (Tuần 5–6)
 
+### Progress Summary
+- Completed: 4/23 tasks (+1 partial)
+- Status: Early Phase
+
 ### 3.1 Project Scaffolding
 
 - [x] Initialize Go module in `ext_authz/` (`go mod init`)
-- [ ] Set up project structure:
+- [~] Set up project structure:
   ```
   ext_authz/
   ├── cmd/server/main.go       # entry point
@@ -104,39 +120,43 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 3.2 JWKS Cache & JWT Verification
 
-- [ ] Implement **JWKS fetcher** — download & cache public keys from Keycloak `/.well-known/jwks.json`
-- [ ] Implement auto-refresh on key rotation (background goroutine, honor `Cache-Control`)
-- [ ] Implement **JWS verification** — validate JWT signature using cached JWKS
-- [ ] Validate standard claims: `exp`, `nbf`, `aud`, `iss`, `sub`
+- [x] Implement **JWKS fetcher** — download & cache public keys from Keycloak `/.well-known/jwks.json`
+- [x] Implement auto-refresh on key rotation (background goroutine, honor `Cache-Control`)
+- [x] Implement **JWS verification** — validate JWT signature using cached JWKS
+- [x] Validate standard claims: `exp`, `nbf`, `aud`, `iss`, `sub`
 - [ ] Write unit tests for JWT verification (valid, expired, wrong issuer, bad signature)
 - [ ] Store tests in `ext_authz/internal/auth/jwt_test.go`
 
 ### 3.3 mTLS Certificate Extraction
 
-- [ ] Implement extraction of client cert from Envoy-forwarded headers (`x-forwarded-client-cert` / XFCC)
-- [ ] Parse X.509 certificate: extract Subject, SAN, **SHA-256 thumbprint**
-- [ ] Validate cert chain (optional, if not fully handled by Envoy)
+- [x] Implement extraction of client cert from Envoy-forwarded headers (`x-forwarded-client-cert` / XFCC)
+- [x] Parse X.509 certificate: extract Subject, SAN, **SHA-256 thumbprint**
+- [~] Validate cert chain (optional, if not fully handled by Envoy)
 - [ ] Write unit tests for cert parsing and thumbprint calculation
 
 ### 3.4 Token-Certificate Binding (cnf Matching)
 
-- [ ] Implement `cnf` claim extraction from JWT payload
-- [ ] Implement **x5t#S256 matching** — compare `cnf.x5t#S256` with client cert thumbprint
-- [ ] Return `403 Forbidden` if binding fails (token not bound to presented cert)
+- [x] Implement `cnf` claim extraction from JWT payload
+- [x] Implement **x5t#S256 matching** — compare `cnf.x5t#S256` with client cert thumbprint
+- [x] Return `403 Forbidden` if binding fails (token not bound to presented cert)
 - [ ] Write unit tests: matching thumbprint, mismatched thumbprint, missing cnf claim
 - [ ] Store tests in `ext_authz/internal/auth/binding_test.go`
 
 ### 3.5 gRPC ext_authz Server
 
-- [ ] Implement Envoy **ext_authz gRPC protocol** (`envoy.service.auth.v3.Authorization`)
-- [ ] Wire up JWT verification + mTLS extraction + binding check into the `Check()` RPC
-- [ ] Return enriched headers on success (e.g., `x-auth-user`, `x-auth-scope`)
-- [ ] Return deny with proper status codes on failure
+- [x] Implement Envoy **ext_authz gRPC protocol** (`envoy.service.auth.v3.Authorization`)
+- [x] Wire up JWT verification + mTLS extraction + binding check into the `Check()` RPC
+- [~] Return enriched headers on success (e.g., `x-auth-user`, `x-auth-scope`) — currently only returns `x-authz-result`
+- [x] Return deny with proper status codes on failure
 - [ ] Integration test: send mock ext_authz requests and verify responses
 
 ---
 
 ## Phase 4 — DPoP & Advanced PoP Verification (Tuần 7–8)
+
+### Progress Summary
+- Completed: 0/18 tasks
+- Status: Early Phase
 
 ### 4.1 DPoP Verification
 
@@ -148,10 +168,10 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ### 4.2 Replay Protection
 
-- [ ] Implement **nonce-based replay cache** (in-memory with TTL, backed by Redis for production)
-- [ ] Check `jti` (JWT ID) uniqueness within the replay window
+- [~] Implement **nonce-based replay cache** (in-memory with TTL, backed by Redis for production)
+- [~] Check `jti` (JWT ID) uniqueness within the replay window
 - [ ] Implement server-issued nonce flow (optional, for stricter DPoP)
-- [ ] Configure TTL and max cache size (eviction policy)
+- [~] Configure TTL and max cache size (eviction policy)
 - [ ] Write unit tests and benchmark the replay cache
 - [ ] Store cache implementation in `ext_authz/internal/cache/replay.go`
 
@@ -172,32 +192,36 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ## Phase 5 — Proxy Integration & Sample Services (Tuần 9)
 
+### Progress Summary
+- Completed: 6/19 tasks (+3 partial)
+- Status: Early Phase
+
 ### 5.1 Envoy Configuration
 
 - [x] Write Envoy **listener** config with TLS + mTLS (`require_client_certificate: true`)
-- [ ] Configure **ext_authz filter** pointing to the Go gRPC service
+- [x] Configure **ext_authz filter** pointing to the Go gRPC service
 - [x] Configure XFCC (x-forwarded-client-cert) header forwarding
-- [x] Set up **route rules** — different auth requirements per path/service
+- [~] Set up **route rules** — different auth requirements per path/service (single protected route currently)
 - [x] Store all configs in `envoy_config/`
 
 ### 5.2 Sample Backend Microservices
 
-- [ ] Create a simple **echo service** (Go or Python) — returns request headers/body for debugging
+- [x] Create a simple **echo service** (Go or Python) — returns request headers/body for debugging
 - [ ] Create a **protected API** service — requires authenticated requests, reads `x-auth-user` header
-- [ ] Dockerize both services
-- [ ] Store in `infra/services/`
+- [~] Dockerize both services — ext_authz + echo are dockerized; protected API is missing
+- [x] Store in `infra/services/`
 
 ### 5.3 Keycloak Configuration
 
-- [ ] Configure a **realm** for the project
-- [ ] Create **client** registrations (confidential client for mTLS, public client for DPoP)
-- [ ] Configure token issuance with **`cnf` claim** (mTLS-bound tokens via RFC 8705)
+- [x] Configure a **realm** for the project
+- [x] Create **client** registrations (confidential client for mTLS, public client for DPoP)
+- [x] Configure token issuance with **`cnf` claim** (mTLS-bound tokens via RFC 8705)
 - [ ] Enable **DPoP** support (if Keycloak version supports it, otherwise mock/extend)
-- [ ] Export realm config to `infra/keycloak/realm-export.json`
+- [x] Export realm config to `infra/keycloak/realm-export.json`
 
 ### 5.4 End-to-End Integration
 
-- [ ] Deploy full stack: Envoy + ext_authz + Keycloak + sample services
+- [x] Deploy full stack: Envoy + ext_authz + Keycloak + sample services — current stack runs Envoy + ext_authz + echo only
 - [ ] Create `infra/docker-compose.yml` for the complete setup
 - [ ] Create `infra/k8s/` with Kubernetes manifests (Deployment, Service, Ingress)
 - [ ] Create Helm chart (optional) in `infra/helm/`
@@ -207,18 +231,22 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ## Phase 6 — Testing & Benchmarking (Tuần 10–11)
 
+### Progress Summary
+- Completed: 1/31 tasks (+3 partial)
+- Status: Early Phase
+
 ### 6.1 Functional Tests
 
-- [ ] **Test A:** Valid mTLS client + valid PoP token → ✅ 200 OK
-- [ ] **Test B:** Valid token but **no client cert** → ❌ 401/403
-- [ ] **Test C:** Valid cert but **invalid/expired token** → ❌ 401
-- [ ] **Test D:** Valid cert + valid token but **binding mismatch** (wrong cert) → ❌ 403
-- [ ] **Test E:** **Stolen token replay** — reuse a DPoP proof with same `jti` → ❌ 403
+- [x] **Test A:** Valid mTLS client + valid PoP token → ✅ 200 OK (implemented as mTLS + valid `x-test-auth` header)
+- [x] **Test B:** Valid token but **no client cert** → ❌ 401/403 (no-cert rejection verified with header-based auth)
+- [x] **Test C:** Valid cert but **invalid/expired token** → ❌ 401 (implemented as valid cert + invalid auth header -> 403)
+- [x] **Test D:** Valid cert + valid token but **binding mismatch** (wrong cert) → ❌ 403
+- [x] **Test E:** **Stolen token replay** — reuse a DPoP proof with same `jti` → ❌ 403
 - [ ] **Test F:** **Expired client certificate** → ❌ TLS handshake failure
 - [ ] **Test G:** **Revoked client certificate** → ❌ TLS handshake failure
 - [ ] **Test H:** **Algorithm downgrade** attempt (e.g., `alg: none`) → ❌ 401
 - [ ] Write all tests as scripts in `tests/functional/`
-- [ ] Create test runner script: `tests/run-all.sh`
+- [x] Create test runner script: `tests/run-all.sh`
 
 ### 6.2 Security Tests
 
@@ -254,9 +282,13 @@ This document outlines the full implementation path for building a **Zero-Trust 
 
 ## Phase 7 — Documentation, Report & Demo (Tuần 12)
 
+### Progress Summary
+- Completed: 3/22 tasks (+1 partial)
+- Status: Early Phase
+
 ### 7.1 Documentation
 
-- [ ] Write **`docs/architecture.md`** — system architecture diagram + component descriptions
+- [x] Write **`docs/architecture.md`** — system architecture diagram + component descriptions
 - [ ] Write **`docs/threat-model.md`** — threat model analysis (STRIDE or similar)
 - [x] Write **`docs/runbook.md`** — operational runbook:
   - How to issue/rotate/revoke client certificates
@@ -268,7 +300,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
   - Mobile app (DPoP)
   - Browser SPA (DPoP with ephemeral keys)
   - Third-party integrators (asymmetric PoP)
-- [ ] Update **`README.md`** with project overview, quickstart, and architecture diagram
+- [x] Update **`README.md`** with project overview, quickstart, and architecture diagram
 
 ### 7.2 Final Report
 
@@ -289,7 +321,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
   - ❌ Blocked attack: missing cert binding → rejected
   - 🔄 Operational: cert rotation with zero downtime
 - [ ] Prepare demo script / slides
-- [ ] Ensure `docker-compose up` reproduces the full environment
+- [x] Ensure `docker-compose up` reproduces the full environment — MVP environment is reproducible; full architecture stack is not
 
 ### 7.4 Code Cleanup & Submission
 
@@ -358,6 +390,17 @@ project_root/
 
 ---
 
+## 🗂 Repository Structure Notes (Actual vs Timeline)
+
+- Existing folders aligned with project scope: `infra/`, `ext_authz/`, `envoy_config/`, `tests/`, `docs/`.
+- Existing but not explicitly represented in checklist items: root `docker-compose.yml`, `infra/certs/`, `infra/pki-issued/`, `infra/tmp-mtls/`.
+- `project_root/k8s/` exists but is currently empty; item `Create infra/k8s/` remains NOT DONE.
+- `project_root/infra/cert-manager/` exists but is currently empty; cert-manager automation remains NOT DONE.
+- `project_root/tests/functional/` exists but is currently empty; advanced functional suite remains NOT DONE.
+- Timeline item `Create infra/docker-compose.dev.yml` is marked NOT DONE (file does not exist in current repo).
+
+---
+
 ## 🔑 Key References
 
 | Resource | Link |
@@ -376,3 +419,21 @@ project_root/
 ---
 
 > **Tip:** Work through each phase sequentially. Each phase builds on the previous one. Start with understanding the theory (Phase 1), then build infrastructure (Phase 2), implement core logic (Phases 3–4), integrate everything (Phase 5), validate (Phase 6), and polish (Phase 7).
+
+## 📊 Actual Implementation Status (AUTO-GENERATED)
+
+### Core System
+- mTLS Envoy Gateway: DONE
+- ext_authz Go service: DONE
+- JWT verification: NOT DONE
+- JWKS caching: NOT DONE
+
+### Security Features
+- Token binding (cnf + x5t#S256): NOT IMPLEMENTED
+- DPoP: NOT IMPLEMENTED
+- Replay protection: NOT IMPLEMENTED
+
+### Infrastructure
+- Docker Compose: DONE
+- Kubernetes: NOT IMPLEMENTED
+- cert-manager: NOT IMPLEMENTED

@@ -1,135 +1,239 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	jwt "github.com/golang-jwt/jwt/v5"
+	"ext-authz/internal/auth"
+	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-type responseBody map[string]string
+type authzServer struct {
+	authv3.UnimplementedAuthorizationServer
+	jwtVerifier *auth.JWTVerifier
+	replayCache *replayCache
+	configErr   error
+}
 
 func main() {
-	forceAllow := os.Getenv("FORCE_ALLOW_FOR_DEMO") == "true"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "50051"
+	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		handleAuth(w, r, forceAllow)
-	})
+	listener, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		log.Fatalf("listen failed: %v", err)
+	}
 
-	log.Println("--- PDP SERVER ĐANG CHẠY TRÊN PORT 5000 ---")
-	if err := http.ListenAndServe(":5000", handler); err != nil {
-		log.Fatalf("server failed: %v", err)
+	server := buildAuthzServer(context.Background())
+
+	grpcServer := grpc.NewServer()
+	authv3.RegisterAuthorizationServer(grpcServer, server)
+
+	log.Printf("ext_authz gRPC server listening on :%s", port)
+	if err := grpcServer.Serve(listener); err != nil {
+		log.Fatalf("grpc server failed: %v", err)
 	}
 }
 
-func handleAuth(w http.ResponseWriter, r *http.Request, forceAllow bool) {
-	log.Println("\n[PDP] >>> Đã nhận yêu cầu!")
-	authHeader := r.Header.Get("Authorization")
-	log.Printf("    + Header nhận được: %s", authHeader)
+func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
+	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 
-	if authHeader == "" {
-		log.Println("[PDP] <<< KẾT QUẢ: CHẶN (Vì Header Authorization đang trống rỗng)")
-		writeJSON(w, http.StatusUnauthorized, responseBody{"status": "Missing Header"})
-		return
+	if s.configErr != nil {
+		return deny(http.StatusUnauthorized, "authorization service configuration error"), nil
 	}
 
-	parts := strings.SplitN(authHeader, " ", 2)
-	if len(parts) != 2 || parts[1] == "" {
-		log.Println("[PDP] <<< LỖI: Invalid authorization header format")
-		writeJSON(w, http.StatusForbidden, responseBody{"status": "Denied", "reason": "Invalid Token Format"})
-		return
-	}
-
-	payload, err := decodeToken(parts[1])
+	identity, err := auth.ParseClientIdentityFromXFCC(getHeader(headers, "x-forwarded-client-cert"))
 	if err != nil {
-		log.Printf("[PDP] <<< LỖI: %v", err)
-		writeJSON(w, http.StatusForbidden, responseBody{"status": "Denied", "reason": "Invalid Token Format"})
-		return
+		return mapAuthErr(err), nil
 	}
 
-	isAllowed, message := verifyZeroTrustPolicy(payload)
-
-	if forceAllow {
-		log.Println("[PDP] !!! CHẾ ĐỘ DEMO ĐANG BẬT: Bỏ qua lỗi và cho phép truy cập.")
-		writeJSON(w, http.StatusOK, responseBody{"status": "OK", "info": "Demo Mode"})
-		return
+	tokenClaims, err := s.jwtVerifier.VerifyAuthorizationHeader(getHeader(headers, "authorization"))
+	if err != nil {
+		return mapAuthErr(err), nil
 	}
 
-	if isAllowed {
-		log.Printf("[PDP] <<< KẾT QUẢ: CHO QUA. (%s)", message)
-		writeJSON(w, http.StatusOK, responseBody{"status": "OK"})
-		return
+	if err := auth.ValidateTokenCertBinding(tokenClaims.CnfX5TS256, identity.Thumbprint); err != nil {
+		return mapAuthErr(err), nil
 	}
 
-	log.Printf("[PDP] <<< KẾT QUẢ: TỪ CHỐI. (%s)", message)
-	writeJSON(w, http.StatusForbidden, responseBody{"status": "Forbidden", "reason": message})
+	if err := s.replayCache.MarkIfNew(tokenClaims.JWTID); err != nil {
+		return mapAuthErr(err), nil
+	}
+
+	return allow(tokenClaims.Subject, identity.Subject), nil
 }
 
-func decodeToken(rawToken string) (jwt.MapClaims, error) {
-	token, _, err := new(jwt.Parser).ParseUnverified(rawToken, jwt.MapClaims{})
-	if err != nil {
-		return nil, err
+func getHeader(headers map[string]string, name string) string {
+	if value, ok := headers[name]; ok {
+		return strings.TrimSpace(value)
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func buildAuthzServer(ctx context.Context) *authzServer {
+	issuer := strings.TrimSpace(firstNonEmpty(os.Getenv("JWT_ISSUER"), os.Getenv("KEYCLOAK_ISSUER_URL")))
+	audience := strings.TrimSpace(os.Getenv("JWT_AUDIENCE"))
+
+	if issuer == "" || audience == "" {
+		return &authzServer{configErr: fmt.Errorf("JWT_ISSUER/KEYCLOAK_ISSUER_URL and JWT_AUDIENCE are required")}
+	}
+
+	jwksURL := strings.TrimSpace(os.Getenv("JWKS_URL"))
+
+	jwksTTL := parseDurationEnv("JWKS_REFRESH_INTERVAL", 5*time.Minute)
+	jwksCache := auth.NewJWKSCache(jwksURL, jwksTTL)
+	jwksCache.SetIssuerForDiscovery(issuer)
+	jwksCache.Start(ctx)
+
+	verifier := auth.NewJWTVerifier(issuer, audience, jwksCache)
+	replay := newReplayCache(parseDurationEnv("REPLAY_TTL", 10*time.Minute))
+
+	return &authzServer{
+		jwtVerifier: verifier,
+		replayCache: replay,
+	}
+}
+
+func parseDurationEnv(name string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+
+	return d
+}
+
+func mapAuthErr(err error) *authv3.CheckResponse {
+	authErr, ok := err.(*auth.AuthError)
 	if !ok {
-		return nil, fmt.Errorf("unexpected token claims")
+		return deny(http.StatusUnauthorized, "unauthorized")
 	}
 
-	return claims, nil
+	return deny(authErr.HTTPStatus, authErr.Message)
 }
 
-func verifyZeroTrustPolicy(payload jwt.MapClaims) (bool, string) {
-	userClearance, _ := payload["clearance"].(string)
-	allowedHours, _ := payload["allowed_hours"].(string)
-	username, _ := payload["preferred_username"].(string)
-	if username == "" {
-		username = "Unknown"
+func deny(httpStatus int, message string) *authv3.CheckResponse {
+	statusCode := codes.Unauthenticated
+	typeCode := typev3.StatusCode_Unauthorized
+
+	if httpStatus == http.StatusForbidden {
+		statusCode = codes.PermissionDenied
+		typeCode = typev3.StatusCode_Forbidden
 	}
 
-	currentHour := time.Now().Hour()
-
-	log.Printf("--- [DEBUG] Kiểm tra User: %s ---", username)
-	log.Printf("    + Clearance trong Token: %s", userClearance)
-	log.Printf("    + Giờ cho phép trong Token: %s", allowedHours)
-	log.Printf("    + Giờ hệ thống lúc này: %dh", currentHour)
-
-	if userClearance == "" || allowedHours == "" {
-		return false, "Thiếu trường 'clearance' hoặc 'allowed_hours' trong Token (Cần check Keycloak)"
+	return &authv3.CheckResponse{
+		Status: status.New(statusCode, message).Proto(),
+		HttpResponse: &authv3.CheckResponse_DeniedResponse{
+			DeniedResponse: &authv3.DeniedHttpResponse{
+				Status: &typev3.HttpStatus{Code: typeCode},
+				Body:   message,
+			},
+		},
 	}
-
-	rangeParts := strings.SplitN(allowedHours, "-", 2)
-	if len(rangeParts) != 2 {
-		return false, "Lỗi định dạng giờ: invalid range"
-	}
-
-	startHour, err := strconv.Atoi(rangeParts[0])
-	if err != nil {
-		return false, fmt.Sprintf("Lỗi định dạng giờ: %v", err)
-	}
-
-	endHour, err := strconv.Atoi(rangeParts[1])
-	if err != nil {
-		return false, fmt.Sprintf("Lỗi định dạng giờ: %v", err)
-	}
-
-	if userClearance == "action1" && startHour <= currentHour && currentHour <= endHour {
-		return true, fmt.Sprintf("Hợp lệ! Chào mừng %s.", username)
-	}
-
-	return false, fmt.Sprintf("Vi phạm Policy: Clearance=%s, Giờ hiện tại=%dh", userClearance, currentHour)
 }
 
-func writeJSON(w http.ResponseWriter, status int, body responseBody) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		log.Printf("failed to encode response: %v", err)
+func allow(user string, certSubject string) *authv3.CheckResponse {
+	headers := []*corev3.HeaderValueOption{
+		{
+			Header:       &corev3.HeaderValue{Key: "x-authz-result", Value: "allow"},
+			AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
+		},
 	}
+
+	if strings.TrimSpace(user) != "" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header:       &corev3.HeaderValue{Key: "x-auth-user", Value: user},
+			AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
+		})
+	}
+
+	if strings.TrimSpace(certSubject) != "" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header:       &corev3.HeaderValue{Key: "x-auth-cert-subject", Value: certSubject},
+			AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
+		})
+	}
+
+	return &authv3.CheckResponse{
+		Status: status.New(codes.OK, "allowed").Proto(),
+		HttpResponse: &authv3.CheckResponse_OkResponse{
+			OkResponse: &authv3.OkHttpResponse{Headers: headers},
+		},
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+type replayCache struct {
+	ttl   time.Duration
+	mu    sync.Mutex
+	items map[string]time.Time
+	last  time.Time
+}
+
+func newReplayCache(ttl time.Duration) *replayCache {
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	return &replayCache{ttl: ttl, items: make(map[string]time.Time, 256), last: time.Now()}
+}
+
+func (c *replayCache) MarkIfNew(jti string) error {
+	if strings.TrimSpace(jti) == "" {
+		return &auth.AuthError{HTTPStatus: http.StatusUnauthorized, Message: "missing jti claim"}
+	}
+
+	now := time.Now()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if now.Sub(c.last) >= c.ttl {
+		cutoff := now.Add(-c.ttl)
+		for key, seenAt := range c.items {
+			if seenAt.Before(cutoff) {
+				delete(c.items, key)
+			}
+		}
+		c.last = now
+	}
+
+	if _, exists := c.items[jti]; exists {
+		return &auth.AuthError{HTTPStatus: http.StatusForbidden, Message: "replay detected"}
+	}
+
+	c.items[jti] = now
+	return nil
 }
