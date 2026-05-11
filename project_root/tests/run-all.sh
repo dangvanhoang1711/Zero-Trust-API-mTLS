@@ -31,10 +31,35 @@ if [ "$ready" != "true" ]; then
   exit 1
 fi
 
-"$PROJECT_ROOT/clients/curl-scripts/01-ok-mtls-valid-header.sh"
-"$PROJECT_ROOT/clients/curl-scripts/02-fail-no-cert.sh"
-"$PROJECT_ROOT/clients/curl-scripts/03-fail-invalid-auth-header.sh"
-"$PROJECT_ROOT/clients/curl-scripts/04-fail-valid-token-wrong-cert-binding.sh"
-"$PROJECT_ROOT/clients/curl-scripts/05-fail-replay-jti.sh"
+echo "=========================================="
+echo "Running Zero-Trust Security Test Suite"
+echo "=========================================="
 
-echo "All MVP demo tests passed"
+run_test() {
+  local name="$1"
+  local script="$2"
+  
+  echo ""
+  echo "==> $name"
+  "$script"
+}
+
+run_test "Test A: Valid mTLS certificate + valid bound JWT → 200 OK" \
+  "$PROJECT_ROOT/clients/curl-scripts/01-ok-mtls-valid-header.sh"
+
+run_test "Test B: Missing bearer token → 401 Unauthorized" \
+  "$PROJECT_ROOT/clients/curl-scripts/02-fail-no-cert.sh"
+
+run_test "Test C: Invalid bearer token → 401 Unauthorized" \
+  "$PROJECT_ROOT/clients/curl-scripts/03-fail-invalid-auth-header.sh"
+
+run_test "Test D: Valid token with wrong cnf.x5t#S256 binding → 403 Forbidden" \
+  "$PROJECT_ROOT/clients/curl-scripts/04-fail-valid-token-wrong-cert-binding.sh"
+
+run_test "Test E: Replay same JWT jti → second request 403 Forbidden" \
+  "$PROJECT_ROOT/clients/curl-scripts/05-fail-replay-jti.sh"
+
+echo ""
+echo "=========================================="
+echo "✓ All security tests passed"
+echo "=========================================="
