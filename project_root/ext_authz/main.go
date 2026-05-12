@@ -49,6 +49,12 @@ func main() {
 	}
 }
 
+// Check implements the Envoy external authorization gRPC service.
+// This is the main authorization pipeline that enforces zero-trust security through:
+// 1. mTLS certificate validation (Envoy layer)
+// 2. JWT signature verification (JWKS-based)
+// 3. Token-certificate binding (RFC 8705 cnf.x5t#S256)
+// 4. Replay protection (jti tracking)
 func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 
@@ -56,20 +62,24 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		return deny(http.StatusUnauthorized, "authorization service configuration error"), nil
 	}
 
+	// Step 1: Extract and validate client certificate from mTLS handshake
 	identity, err := auth.ParseClientIdentityFromXFCC(getHeader(headers, "x-forwarded-client-cert"))
 	if err != nil {
 		return mapAuthErr(err), nil
 	}
 
+	// Step 2: Verify JWT signature and extract claims
 	tokenClaims, err := s.jwtVerifier.VerifyAuthorizationHeader(getHeader(headers, "authorization"))
 	if err != nil {
 		return mapAuthErr(err), nil
 	}
 
+	// Step 3: Verify token is bound to the presented certificate (proof-of-possession)
 	if err := auth.ValidateTokenCertBinding(tokenClaims.CnfX5TS256, identity.Thumbprint); err != nil {
 		return mapAuthErr(err), nil
 	}
 
+	// Step 4: Check for replay attacks using JWT ID
 	if err := s.replayCache.MarkIfNew(tokenClaims.JWTID); err != nil {
 		return mapAuthErr(err), nil
 	}
@@ -196,13 +206,18 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// replayCache prevents replay attacks by tracking JWT IDs (jti claim).
+// Uses in-memory storage with TTL-based eviction.
+// Note: Not suitable for multi-instance deployments (use Redis for production).
 type replayCache struct {
-	ttl   time.Duration
-	mu    sync.Mutex
-	items map[string]time.Time
-	last  time.Time
+	ttl   time.Duration        // Time window for replay protection
+	mu    sync.Mutex           // Protects concurrent access
+	items map[string]time.Time // Maps jti to first-seen timestamp
+	last  time.Time            // Last eviction time
 }
 
+// newReplayCache creates a replay cache with the specified TTL.
+// Default TTL is 10 minutes if ttl <= 0.
 func newReplayCache(ttl time.Duration) *replayCache {
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
@@ -210,6 +225,9 @@ func newReplayCache(ttl time.Duration) *replayCache {
 	return &replayCache{ttl: ttl, items: make(map[string]time.Time, 256), last: time.Now()}
 }
 
+// MarkIfNew checks if a JWT ID has been seen before within the TTL window.
+// Returns error if jti is empty or already exists (replay detected).
+// Thread-safe through mutex protection.
 func (c *replayCache) MarkIfNew(jti string) error {
 	if strings.TrimSpace(jti) == "" {
 		return &auth.AuthError{HTTPStatus: http.StatusUnauthorized, Message: "missing jti claim"}

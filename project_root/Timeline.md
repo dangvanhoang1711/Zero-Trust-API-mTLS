@@ -124,23 +124,23 @@ This document outlines the full implementation path for building a **Zero-Trust 
 - [x] Implement auto-refresh on key rotation (background goroutine, honor `Cache-Control`)
 - [x] Implement **JWS verification** — validate JWT signature using cached JWKS
 - [x] Validate standard claims: `exp`, `nbf`, `aud`, `iss`, `sub`
-- [ ] Write unit tests for JWT verification (valid, expired, wrong issuer, bad signature)
-- [ ] Store tests in `ext_authz/internal/auth/jwt_test.go`
+- [x] Write unit tests for JWT verification (valid, expired, wrong issuer, bad signature)
+- [x] Store tests in `ext_authz/internal/auth/jwt_test.go`
 
 ### 3.3 mTLS Certificate Extraction
 
 - [x] Implement extraction of client cert from Envoy-forwarded headers (`x-forwarded-client-cert` / XFCC)
 - [x] Parse X.509 certificate: extract Subject, SAN, **SHA-256 thumbprint**
 - [~] Validate cert chain (optional, if not fully handled by Envoy)
-- [ ] Write unit tests for cert parsing and thumbprint calculation
+- [x] Write unit tests for cert parsing and thumbprint calculation
 
 ### 3.4 Token-Certificate Binding (cnf Matching)
 
 - [x] Implement `cnf` claim extraction from JWT payload
 - [x] Implement **x5t#S256 matching** — compare `cnf.x5t#S256` with client cert thumbprint
 - [x] Return `403 Forbidden` if binding fails (token not bound to presented cert)
-- [ ] Write unit tests: matching thumbprint, mismatched thumbprint, missing cnf claim
-- [ ] Store tests in `ext_authz/internal/auth/binding_test.go`
+- [x] Write unit tests: matching thumbprint, mismatched thumbprint, missing cnf claim
+- [x] Store tests in `ext_authz/internal/auth/binding_test.go`
 
 ### 3.5 gRPC ext_authz Server
 
@@ -172,7 +172,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
 - [~] Check `jti` (JWT ID) uniqueness within the replay window
 - [ ] Implement server-issued nonce flow (optional, for stricter DPoP)
 - [~] Configure TTL and max cache size (eviction policy)
-- [ ] Write unit tests and benchmark the replay cache
+- [x] Write unit tests and benchmark the replay cache
 - [ ] Store cache implementation in `ext_authz/internal/cache/replay.go`
 
 ### 4.3 Policy Enforcement
@@ -295,7 +295,7 @@ This document outlines the full implementation path for building a **Zero-Trust 
   - How to handle JWKS rotation
   - Rollback plan for failed deployments
   - Monitoring & alerting recommendations
-- [ ] Write **`docs/onboarding.md`** — guide for onboarding new clients:
+- [x] Write **`docs/onboarding.md`** — guide for onboarding new clients:
   - Machine-to-machine (mTLS)
   - Mobile app (DPoP)
   - Browser SPA (DPoP with ephemeral keys)

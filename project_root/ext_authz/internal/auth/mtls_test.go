@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/x509"
 	"testing"
 )
 
