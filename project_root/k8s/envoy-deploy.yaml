@@ -17,23 +17,28 @@ spec:
       - name: envoy
         image: envoyproxy/envoy:v1.28-latest
         ports:
-        - containerPort: 10000
+        - containerPort: 443
+        - containerPort: 9901
         volumeMounts:
-        # Gắn file cấu hình envoy.yaml từ ConfigMap
         - name: config-volume
           mountPath: /etc/envoy/envoy.yaml
           subPath: envoy.yaml
-        # Gắn chứng chỉ mTLS từ Secret (được tạo tự động ở mục 2.3)
-        - name: cert-volume
+        - name: envoy-cert-volume
           mountPath: /etc/envoy/tls
+          readOnly: true
+        - name: envoy-client-trust
+          mountPath: /etc/envoy/tls/trust
           readOnly: true
       volumes:
       - name: config-volume
         configMap:
           name: envoy-config
-      - name: cert-volume
+      - name: envoy-cert-volume
         secret:
-          secretName: envoy-tls-secret
+          secretName: envoy-server-tls
+      - name: envoy-client-trust
+        secret:
+          secretName: envoy-client-trust
 ---
 apiVersion: v1
 kind: Service
@@ -44,6 +49,6 @@ spec:
     app: envoy
   ports:
   - protocol: TCP
-    port: 10000
-    targetPort: 10000
+    port: 443
+    targetPort: 443
   type: ClusterIP

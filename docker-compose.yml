@@ -1,0 +1,60 @@
+name: zero-trust-mvp
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      KC_DB: "dev-file"
+      KC_HOSTNAME: "http://keycloak:8080"
+      KC_HTTP_ENABLED: "true"
+      REALM_EXPORT_PATH: "/opt/keycloak/data/import/realm-export.json"
+    volumes:
+      - ./project_root/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "18080:8080"
+    restart: unless-stopped
+
+  ext_authz:
+    build:
+      context: ./project_root/ext_authz
+    depends_on:
+      - keycloak
+    environment:
+      PORT: "50051"
+      JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
+      JWT_AUDIENCE: "api-gateway"
+      JWKS_REFRESH_INTERVAL: "5m"
+      REPLAY_TTL: "10m"
+    expose:
+      - "50051"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./project_root/infra/services/echo
+    environment:
+      PORT: "8080"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  envoy:
+    image: envoyproxy/envoy:v1.30.10
+    command:
+      - "envoy"
+      - "-c"
+      - "/etc/envoy/envoy.yaml"
+      - "--log-level"
+      - "warning"
+    volumes:
+      - ./project_root/envoy_config/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./project_root/infra/certs:/etc/envoy/tls:ro
+    ports:
+      - "10000:10000"
+    depends_on:
+      - ext_authz
+      - backend
+    restart: unless-stopped

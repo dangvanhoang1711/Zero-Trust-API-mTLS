@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres_db_dev
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: password
+    networks:
+      - zero-trust-dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.7
+    container_name: keycloak_dev
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: password
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - zero-trust-dev
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault_dev
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_ADDR: http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - zero-trust-dev
+
+  ext-authz:
+    build: 
+      context: ../../ext_authz
+    container_name: ext-authz-dev
+    ports:
+      - "5001:5000"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - FORCE_ALLOW_FOR_DEMO=false
+    networks:
+      - zero-trust-dev
+    depends_on:
+      - keycloak
+
+  envoy-gateway:
+    image: envoyproxy/envoy:v1.25-latest
+    container_name: envoy-dev
+    volumes:
+      - ../../envoy_config:/etc/envoy
+    ports:
+      - "8443:443"
+      - "9901:9901"
+    networks:
+      - zero-trust-dev
+    depends_on:
+      - ext-authz
+
+  target-app:
+    image: nginxdemos/hello
+    container_name: target-app-dev
+    networks:
+      - zero-trust-dev
+
+networks:
+  zero-trust-dev:
+    driver: bridge
+
+volumes:
+  postgres_data_dev:
