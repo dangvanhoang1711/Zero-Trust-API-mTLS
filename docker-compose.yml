@@ -61,6 +61,23 @@ services:
       - "8080"
     restart: unless-stopped
 
+  dashboard:
+    build:
+      context: ./project_root/dashboard
+    depends_on:
+      - keycloak
+      - envoy
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./project_root/infra/certs:/app/../infra/certs:ro
+    environment:
+      KEYCLOAK_URL: "http://keycloak:8080"
+      ENVOY_URL: "https://envoy:10000"
+      EXT_AUTHZ_URL: "http://ext_authz:50051"
+      DASHBOARD_PORT: "5000"
+    restart: unless-stopped
+
   vault:
     image: hashicorp/vault:1.15
     command: ["vault", "server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]

@@ -20,6 +20,7 @@ SERVER_CHAIN = os.path.join(CERTS_DIR, "server-chain.crt")
 
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:18080")
 ENVOY_URL = os.environ.get("ENVOY_URL", "https://localhost:10000")
+EXT_AUTHZ_URL = os.environ.get("EXT_AUTHZ_URL", "http://localhost:50051")
 REALM = "zero-trust"
 
 def get_token(client_id="demo-client", client_secret="demo-client-secret"):
@@ -87,7 +88,7 @@ def api_status():
         services["envoy"] = {"status": "error", "error": str(e)[:100]}
 
     try:
-        r = requests.get("http://localhost:50051", timeout=3)
+        r = requests.get(EXT_AUTHZ_URL, timeout=3)
         services["ext_authz"] = {"status": "unknown"}
     except:
         services["ext_authz"] = {"status": "ok", "note": "gRPC port open"}
