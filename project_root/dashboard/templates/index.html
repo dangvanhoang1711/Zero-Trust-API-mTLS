@@ -400,7 +400,6 @@
     <div class="status-card"><div class="name">🆔 Keycloak</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
     <div class="status-card"><div class="name">🔒 Envoy</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
     <div class="status-card"><div class="name">🔑 ext_authz</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
-    <div class="status-card"><div class="name">⚙️ Backend</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
   </div>
 
 
@@ -961,7 +960,7 @@ async function checkStatus() {
     const r = await fetch('/api/status');
     const data = await r.json();
     const cards = document.querySelectorAll('.status-card');
-    const svcs = ['keycloak', 'envoy', 'ext_authz', 'backend'];
+    const svcs = ['keycloak', 'envoy', 'ext_authz'];
     svcs.forEach((s,i) => {
       const info = data[s]||{};
       const dot = cards[i].querySelector('.indicator');
@@ -969,7 +968,7 @@ async function checkStatus() {
       if (info.status==='ok') { dot.className='indicator ok'; txt.innerHTML = '<span class="indicator ok"></span> Đang chạy'; }
       else { dot.className='indicator error'; txt.innerHTML = '<span class="indicator error"></span> ' + (info.error||'Lỗi'); }
     });
-    ['keycloak','envoy','ext_authz','backend'].forEach(s => {
+    ['keycloak','envoy','ext_authz'].forEach(s => {
       const el = document.getElementById('arch-'+s);
       if (el && data[s]?.status==='ok') el.classList.add('success');
     });
