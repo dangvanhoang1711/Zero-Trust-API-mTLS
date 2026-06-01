@@ -97,7 +97,7 @@ echo ""
 echo "=== 5. Issue server cert (CN=localhost) ==="
 VAULT write -format=json pki-int/issue/server-cert \
   common_name="localhost" \
-  alt_names="localhost,envoy-service.default.svc.cluster.local" \
+  alt_names="localhost,envoy,envoy-service.default.svc.cluster.local" \
   ip_sans="127.0.0.1" \
   ttl=730h > "$PKI_DIR/server.json"
 
@@ -117,7 +117,9 @@ echo "  Client cert: $PKI_DIR/client.crt"
 
 echo ""
 echo "=== 7. Build chain files ==="
-cat "$PKI_DIR/server.crt" "$PKI_DIR/ra-intermediate.crt" > "$PKI_DIR/server-chain.crt"
+echo "$(cat "$PKI_DIR/server.crt")" > "$PKI_DIR/server-chain.crt"
+echo "" >> "$PKI_DIR/server-chain.crt"
+echo "$(cat "$PKI_DIR/ra-intermediate.crt")" >> "$PKI_DIR/server-chain.crt"
 
 echo ""
 echo "=== 8. Deploy to target locations ==="
