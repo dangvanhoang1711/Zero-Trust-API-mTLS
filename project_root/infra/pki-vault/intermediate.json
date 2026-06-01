@@ -1,0 +1,14 @@
+{
+  "request_id": "1e25984f-c3e5-87c5-9ca5-4bc6b8791a98",
+  "lease_id": "",
+  "lease_duration": 0,
+  "renewable": false,
+  "data": {
+    "csr": "-----BEGIN CERTIFICATE REQUEST-----\nMIICbTCCAVUCAQAwKDEmMCQGA1UEAxMdWmVybyBUcnVzdCBSQSBJbnRlcm1lZGlh\ndGUgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCXJ8U6pB+ydNTZ\n9X+Ge+yKztP5Rm4B6b8R7OUGlA14k+yS4cOxB2Jz/CzVtZb41YvxbGjx8AkyOo4d\nd0JAnP/95kMjt21iZiyO3s05jqjSQCWAqa85kPcfD6861jqzRG4OvP8UVGCVlF+Z\nnEUzhGEKafBvmZJTMUdnap/tNMvJAIiktYwOIHNyRD3xGDS5WQBLNJkKaGoq2LqE\n+zc49I00oovUZDLih2R1NwfZjTCygTL6bKGvauRMlApshNa+b2A46TujIo3g6Jo9\nPGgKICy1GdIeP8kf4CBCFJ8E9HMBn/KZ/CO6G8Xqgqw4+k3HtMUjfRUPBcRvIOwX\nQnDX7lHzAgMBAAGgADANBgkqhkiG9w0BAQsFAAOCAQEAGHMTwtT29z3xEh4NJR6c\nB+ps6ZvdbmB7jruj5wFwcBVDpEPSNxTQkpVUZcN4C6bBSXBuHTc0hxu61hKsna2o\na+ysa7ajJwkZNFPIphv8muJeToISwdQYm8M/s6fgJRJZ7EqxoHOkSXISLQu2wfTZ\nvkkU/Qkh4LT6FpmbiRTDBkzRzvzGjZfdt00mkP3pQIvVOrqTUAnoOrfHGcRLe+HO\nJU2yyyJJ4C3hblKuL7MJLl8RxFwTmVrF8s82J4wOtxm6iITT+v6WAGupwqElNJ56\nGxgu76RqxjOY1IkKcAbVUM0IoCUT4b4i+I6TckY2d1MMEO59XPYlneXKH+R5un9V\nZQ==\n-----END CERTIFICATE REQUEST-----",
+    "key_id": "f14ea85d-d657-5fab-d726-ed5a8bf5c380"
+  },
+  "warnings": [
+    "This mount hasn't configured any authority information access (AIA) fields; this may make it harder for systems to find missing certificates in the chain or to validate revocation status of certificates. Consider updating /config/urls or the newly generated issuer with this information. Since this certificate is an intermediate, it might be useful to regenerate this certificate after fixing this problem for the root mount.",
+    "Endpoint ignored these unrecognized parameters: [issuer_name]"
+  ]
+}
