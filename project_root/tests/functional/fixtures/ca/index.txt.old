@@ -1,0 +1,4 @@
+V	270419063739Z		1000	unknown	/CN=localhost
+V	270419063739Z		1001	unknown	/CN=valid-client
+V	240101010000Z		1002	unknown	/CN=expired-client
+V	270419063739Z		1003	unknown	/CN=revoked-client

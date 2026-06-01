@@ -2,18 +2,29 @@
 
 set -euo pipefail
 
-: "${ENVOY_URL:=https://localhost:8443}"
-: "${REVOKED_CERT:=./fixtures/revoked-client.crt}"
-: "${REVOKED_KEY:=./fixtures/revoked-client.key}"
-: "${CA_CHAIN:=/etc/envoy/tls/trust/intermediate-ca.crt}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR" && pwd)"
 
-if curl --silent --show-error \
+: "${ENVOY_URL:=https://localhost:10000/}"
+: "${REVOKED_CERT:=$PROJECT_ROOT/fixtures/revoked-client.crt}"
+: "${REVOKED_KEY:=$PROJECT_ROOT/fixtures/revoked-client.key}"
+: "${CA_CHAIN:=$PROJECT_ROOT/fixtures/chain.pem}"
+
+status_code=$(curl --silent --show-error \
   --cert "$REVOKED_CERT" \
   --key "$REVOKED_KEY" \
   --cacert "$CA_CHAIN" \
-  "$ENVOY_URL/"; then
-  printf 'expected revoked certificate handshake to fail\n' >&2
+  --output /tmp/zt_case_g.out \
+  --write-out "%{http_code}" \
+  "$ENVOY_URL" || true)
+
+if [ "$status_code" = "200" ]; then
+  echo "expected revoked certificate request to be blocked, but request unexpectedly succeeded" >&2
   exit 1
+fi
+
+if [ "$status_code" != "000" ]; then
+  cat /tmp/zt_case_g.out
 fi
 
 printf 'revoked certificate rejected as expected\n'

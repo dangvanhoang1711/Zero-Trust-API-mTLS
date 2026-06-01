@@ -20,8 +20,8 @@ This project implements a zero-trust API authentication system that prevents bea
 
 **Key Results**:
 - ✅ Core zero-trust authentication flow implemented and operational
-- ✅ 5/5 end-to-end security tests passing
-- ✅ 13 unit tests passing with comprehensive coverage
+- ✅ Functional security tests A–H passing via `tests/run-all.sh`
+- ✅ Security attack scenarios passing via `tests/security/run-all-security.sh`
 - ✅ Token-certificate binding prevents credential theft
 - ✅ Replay protection blocks duplicate requests
 
@@ -171,12 +171,12 @@ func ValidateTokenCertBinding(tokenThumbprint, clientThumbprint string) error {
 
 ### 4.4 Replay Protection
 
-**Location**: `ext_authz/main.go`
+**Location**: `ext_authz/internal/cache/replay.go`
 
 **Mechanism**: In-memory cache tracking JWT IDs (`jti` claim)
 
 ```go
-type replayCache struct {
+type ReplayCache struct {
     ttl   time.Duration        // Replay window (default: 10 minutes)
     mu    sync.Mutex           // Thread-safe access
     items map[string]time.Time // jti -> timestamp
@@ -213,7 +213,7 @@ type replayCache struct {
 
 ### 5.1 End-to-End Tests
 
-**Test Suite**: `project_root/tests/run-all.sh`
+**Functional Suite**: `project_root/tests/run-all.sh` (Test A–H)
 
 | Test | Scenario | Expected | Status |
 |------|----------|----------|--------|
@@ -222,10 +222,22 @@ type replayCache struct {
 | C | Valid cert + invalid JWT | 401 | ✅ PASS |
 | D | Valid JWT + wrong certificate binding | 403 | ✅ PASS |
 | E | Replay same JWT ID | 403 (2nd request) | ✅ PASS |
+| ... | ... | ... | ✅ PASS |
+
+**Security Attack Suite**: `project_root/tests/security/run-all-security.sh` (SEC-01..SEC-04)
+
+| Test | Scenario | Expected | Status |
+|------|----------|----------|--------|
+| SEC-01 | No client key/cert (MITM/Replay attempt) | TLS handshake failure | ✅ PASS |
+| SEC-02 | Stolen token + non-bound cert | 403 Forbidden | ✅ PASS |
+| SEC-03 | Self-signed (forged) certificate | TLS handshake failure | ✅ PASS |
+| SEC-04 | Tampered JWT signature | 401 Unauthorized | ✅ PASS |
 
 **Verification**:
 ```bash
 cd project_root && ./tests/run-all.sh
+
+cd project_root && ./tests/security/run-all-security.sh
 ```
 
 ### 5.2 Unit Tests
@@ -255,7 +267,7 @@ cd project_root && ./tests/run-all.sh
 - Concurrent access (race conditions)
 - TTL-based eviction
 
-**Results**: All 13 tests pass + 3 benchmarks
+**Results**: All 13 tests pass; benchmark harness scripts added under `project_root/benchmarks/`.
 
 ### 5.3 Security Properties Verified
 
@@ -315,13 +327,13 @@ Root CA → Intermediate CA → Client Certificate
 
 ### 7.1 Current Limitations
 
-**1. DPoP Not Implemented**
+**1. DPoP Implemented (Hybrid Support)**
 
-RFC 9449 (DPoP) not implemented. System uses mTLS-bound tokens only.
+RFC 9449 (DPoP) is implemented for token flows carrying `cnf.jkt` and DPoP proof headers.
 
-**Impact**: Mobile and browser clients cannot use the system.
+Impact: Certificate-bound and DPoP-style claims can be validated by the same auth pipeline.
 
-**Future Work**: Implement DPoP for ephemeral key binding.
+Future Work: Expand key registration and client onboarding flows for broader mobile/browser lifecycle support.
 
 **2. In-Memory Replay Cache**
 
@@ -355,13 +367,13 @@ Kubernetes manifests exist but not validated end-to-end in runtime.
 
 **Future Work**: Test Kubernetes deployment with cert-manager integration.
 
-**5. No Scope-Based Access Control**
+**5. Fine-Grained Scope Enforcement**
 
-All authenticated clients have full access.
+Scope-based checks are supported via env var policy (`REQUIRED_SCOPE` / `REQUIRED_SCOPES`), currently in a global (all-routes) mode.
 
-**Impact**: No fine-grained authorization.
+**Impact**: No RBAC/ABAC matrix per route or operation is implemented.
 
-**Future Work**: Implement scope checking.
+**Future Work**: Add per-route, per-method policy mapping and role-based authorization.
 
 **6. No Rate Limiting**
 
@@ -415,8 +427,8 @@ No metrics, tracing, or alerting.
 - Defense-in-depth architecture
 
 **Testing** (✅ Complete):
-- 5/5 end-to-end security tests passing
-- 13 unit tests passing
+- Functional security tests A–H passing via `tests/run-all.sh`
+- Security scenarios passing via `tests/security/run-all-security.sh`
 - Comprehensive documentation
 - Reproducible demo environment
 
@@ -510,11 +522,11 @@ This implementation bridges academic cryptography and real-world security engine
 - JWKS caching with automatic refresh
 - Comprehensive error handling
 
-**Testing** (✅ Complete):
+**Testing** (🟡 In Progress):
 - 51 unit tests covering all auth modules
-- 14 benchmark tests for performance validation
-- 5 end-to-end security tests
-- All tests passing with zero failures
+- 3 benchmark execution scripts + 3 resource sampling scripts in `benchmarks/scripts/`
+- 3 security scenario scripts in `tests/security/`
+- 8+ end-to-end scenarios in `tests/functional/` and `tests/run-all.sh`
 - Edge case coverage (empty inputs, malformed data, concurrency)
 
 **Documentation** (✅ Complete):
@@ -535,14 +547,14 @@ This implementation bridges academic cryptography and real-world security engine
 
 **Production Hardening** (❌ Missing):
 1. **Distributed Replay Cache**: Current in-memory cache not suitable for multi-instance deployments
-2. **Certificate Revocation Enforcement**: CRL infrastructure exists but not enforced in Envoy
+2. **Certificate Revocation Enforcement**: CRL is wired into Envoy TLS validation config (`ca.crl`), but runtime enforcement still needs clean-environment verification.
 3. **Automated Certificate Management**: Manual certificate lifecycle (no cert-manager integration)
 4. **Monitoring and Alerting**: No metrics, tracing, or alerting infrastructure
 5. **Rate Limiting**: No protection against abuse from authenticated clients
-6. **Scope-Based Access Control**: All-or-nothing authorization (no fine-grained permissions)
+6. **Scope Policy Depth**: Basic global scope enforcement via `REQUIRED_SCOPE(S)`; per-route matrix still missing
 
 **Advanced Features** (❌ Missing):
-7. **DPoP (RFC 9449)**: No support for mobile/browser clients
+7. **DPoP (RFC 9449)**: Hybrid DPoP support exists for `cnf.jkt` claim paths; broad mobile/browser onboarding workflow remains pending.
 8. **HTTP Message Signatures**: No request integrity verification
 9. **Anomaly Detection**: No behavioral analysis or threat detection
 10. **Load Balancing**: Single-instance deployment only
@@ -551,7 +563,7 @@ This implementation bridges academic cryptography and real-world security engine
 11. **Kubernetes Runtime Validation**: Manifests exist but not tested end-to-end
 12. **Vault PKI Integration**: Scripts exist but not active in runtime
 13. **Automated Testing Pipeline**: No CI/CD integration
-14. **Performance Benchmarking**: No load testing or capacity planning
+14. **Performance Benchmarking**: Benchmark harness covers baseline TLS-only bearer path, mTLS-only, and mTLS+PoP with latency/resource CSV outputs.
 
 ### 10.3 Why System Is Still Secure
 
@@ -563,7 +575,7 @@ This implementation bridges academic cryptography and real-world security engine
 - Defense-in-depth architecture provides multiple security layers
 - All security tests pass
 
-**2. Scope Is Appropriate**
+**2. Scope Controls Are Present but Not Full-Fidelity**
 - Academic prototype demonstrates zero-trust principles
 - Suitable for controlled environments (internal M2M)
 - Not intended for public internet deployment
@@ -573,7 +585,7 @@ This implementation bridges academic cryptography and real-world security engine
 - Distributed cache: Operational scalability, not core security
 - Monitoring: Operational visibility, not authentication security
 - Rate limiting: DoS protection, not authentication bypass
-- Scope control: Authorization granularity, not authentication
+- Scope control: Current implementation is global claim-level check, not fine-grained route-level policy
 
 **4. Residual Risks Are Acceptable**
 - Replay across instances: Mitigated by short token TTL (5-15 min)

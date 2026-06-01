@@ -95,6 +95,45 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "demo-client-dpop",
+      "name": "demo-client-dpop",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "demo-client-dpop-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "enabled": true,
+      "protocolMappers": [
+        {
+          "name": "audience-api-gateway",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "api-gateway",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "cnf-jkt",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "cnf",
+            "claim.value": "{\"jkt\":\"NEj53kHq7gvIzJDw1FrVAaOcWTJByOcsDqDoLzaZyrQ\"}",
+            "jsonType.label": "JSON",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "users": [

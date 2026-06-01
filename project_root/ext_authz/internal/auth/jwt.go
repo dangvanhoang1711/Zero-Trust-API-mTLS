@@ -21,6 +21,10 @@ type TokenClaims struct {
 	Issuer     string
 	Audience   []string
 	CnfX5TS256 string
+	CnfJKT     string
+	CnfJWK     map[string]any
+	Scopes     []string
+	RawClaims  map[string]any
 }
 
 func NewJWTVerifier(issuer string, audience string, cache *JWKSCache) *JWTVerifier {
@@ -48,9 +52,11 @@ func (v *JWTVerifier) VerifyAuthorizationHeader(authzHeader string) (*TokenClaim
 		return nil, unauthorized("invalid token")
 	}
 
-	cnf, err := extractCNFThumbprint(claims)
-	if err != nil {
-		return nil, forbidden("missing cnf.x5t#S256")
+	cnfX5T, errX5T := extractCNFThumbprint(claims)
+	cnfJKT, errJKT := extractCNFJWKThumbprint(claims)
+	cnfJWK, errJWK := extractCNFJWK(claims)
+	if errX5T != nil && errJKT != nil && errJWK != nil {
+		return nil, forbidden("missing cnf.x5t#S256, cnf.jkt, or cnf.jwk")
 	}
 
 	subject := stringClaim(claims, "sub")
@@ -63,8 +69,24 @@ func (v *JWTVerifier) VerifyAuthorizationHeader(authzHeader string) (*TokenClaim
 		JWTID:      stringClaim(claims, "jti"),
 		Issuer:     stringClaim(claims, "iss"),
 		Audience:   audienceClaim(claims["aud"]),
-		CnfX5TS256: cnf,
+		CnfX5TS256: cnfX5T,
+		CnfJKT:     cnfJKT,
+		CnfJWK:     cnfJWK,
+		Scopes:     extractScopeClaim(claims["scope"]),
+		RawClaims:  copyClaimMap(claims),
 	}, nil
+}
+
+func copyClaimMap(claims jwt.MapClaims) map[string]any {
+	if len(claims) == 0 {
+		return nil
+	}
+
+	copied := make(map[string]any, len(claims))
+	for key, value := range claims {
+		copied[key] = value
+	}
+	return copied
 }
 
 func (v *JWTVerifier) keyFunc(token *jwt.Token) (any, error) {
@@ -117,6 +139,53 @@ func extractCNFThumbprint(claims jwt.MapClaims) (string, error) {
 	return strings.TrimSpace(rawThumb), nil
 }
 
+func extractCNFJWKThumbprint(claims jwt.MapClaims) (string, error) {
+	rawCNF, ok := claims["cnf"]
+	if !ok {
+		return "", errors.New("cnf missing")
+	}
+
+	cnfMap, ok := rawCNF.(map[string]any)
+	if !ok {
+		return "", errors.New("cnf invalid")
+	}
+
+	rawThumb, ok := cnfMap["jkt"].(string)
+	if !ok || strings.TrimSpace(rawThumb) == "" {
+		return "", errors.New("jkt missing")
+	}
+
+	return strings.TrimSpace(rawThumb), nil
+}
+
+func extractCNFJWK(claims jwt.MapClaims) (map[string]any, error) {
+	rawCNF, ok := claims["cnf"]
+	if !ok {
+		return nil, errors.New("cnf missing")
+	}
+
+	cnfMap, ok := rawCNF.(map[string]any)
+	if !ok {
+		return nil, errors.New("cnf invalid")
+	}
+
+	rawJWK, ok := cnfMap["jwk"]
+	if !ok {
+		return nil, errors.New("cnf.jwk missing")
+	}
+
+	parsed, ok := rawJWK.(map[string]any)
+	if !ok {
+		return nil, errors.New("cnf.jwk invalid")
+	}
+
+	if kty := strings.TrimSpace(stringValue(parsed["kty"])); kty == "" {
+		return nil, errors.New("cnf.jwk missing kty")
+	}
+
+	return parsed, nil
+}
+
 func stringClaim(claims jwt.MapClaims, key string) string {
 	value, _ := claims[key].(string)
 	return value
@@ -142,6 +211,81 @@ func audienceClaim(raw any) []string {
 	default:
 		return nil
 	}
+}
+
+func extractScopeClaim(raw any) []string {
+	switch v := raw.(type) {
+	case string:
+		return parseScopeString(v)
+	case []any:
+		scopes := make([]string, 0)
+		for _, item := range v {
+			text, ok := item.(string)
+			if !ok {
+				continue
+			}
+			scopes = append(scopes, parseScopeString(text)...)
+		}
+		return scopes
+	case []string:
+		scopes := make([]string, 0, len(v))
+		for _, text := range v {
+			scopes = append(scopes, parseScopeString(text)...)
+		}
+		return scopes
+	default:
+		return nil
+	}
+}
+
+func parseScopeString(raw string) []string {
+	parts := strings.Fields(raw)
+	scopes := make([]string, 0, len(parts))
+	for _, scope := range parts {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		scopes = append(scopes, scope)
+	}
+	return scopes
+}
+
+func ValidateScopes(tokenScopes []string, requiredScopes []string) error {
+	if len(requiredScopes) == 0 {
+		return nil
+	}
+
+	if len(tokenScopes) == 0 {
+		return unauthorized("missing scope claim")
+	}
+
+	required := make(map[string]struct{}, len(requiredScopes))
+	for _, scope := range requiredScopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		required[scope] = struct{}{}
+	}
+
+	if len(required) == 0 {
+		return nil
+	}
+
+	for _, scope := range tokenScopes {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		delete(required, scope)
+	}
+
+	if len(required) > 0 {
+		return forbidden("required scope missing")
+	}
+
+	return nil
 }
 
 func BuildJWKSURL(baseURL string) (string, error) {

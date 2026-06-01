@@ -75,6 +75,24 @@ Zero-trust security requires **proof-of-possession**: the client must prove they
 
 ## Implemented Design: RFC 8705 Certificate-Bound Tokens
 
+## Selected Pattern and Rationale
+
+This project uses **mTLS-bound JWTs (RFC 8705)** as the active proof-of-possession mechanism.
+
+This design was selected because:
+
+- The coursework scope is API-level machine-to-machine authentication, where client certificates are practical.
+- mTLS + `cnf.x5t#S256` gives strong binding with deterministic verification.
+- Existing demos, tests, and runbook entries are built around certificate-based binding.
+- DPoP and HTTP Message Signatures are explicitly kept as optional future alternatives for browser/mobile flows.
+
+Implementation evidence:
+
+- `ext_authz/internal/auth/mtls.go` (certificate parsing + thumbprint extraction)
+- `ext_authz/internal/auth/binding.go` (`cnf.x5t#S256` verification)
+- `ext_authz/internal/auth/dpop.go` (CNF `jkt` path, optional DPoP flow)
+- `project_root/tests/run-all.sh` + `project_root/tests/security/run-all-security.sh`
+
 ### Architecture
 
 ```

@@ -1,8 +1,18 @@
 package auth
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestExtractCertPEM_Success(t *testing.T) {
@@ -152,6 +162,126 @@ func TestExtractSAN_DNSNames(t *testing.T) {
 	if san[1] != "www.example.com" {
 		t.Errorf("expected second SAN 'www.example.com', got '%s'", san[1])
 	}
+}
+
+func TestParseClientIdentityFromXFCC_ValidChain(t *testing.T) {
+	rootCert, rootKey := generateTestCA(t, "Zero-Trust Test Root CA", 1)
+	leafCert, _ := generateTestClientCert(t, "zero-trust-test-client", rootCert, rootKey, 2)
+
+	caBundlePath := createTempCertBundle(t, rootCert)
+	t.Setenv("CLIENT_CA_BUNDLE", caBundlePath)
+
+	xfcc := buildXFCCFromCertPEM(certificateToPEM(t, leafCert))
+	identity, err := ParseClientIdentityFromXFCC(xfcc)
+	if err != nil {
+		t.Fatalf("expected chain validation to pass, got %v", err)
+	}
+
+	if identity == nil || identity.Subject == "" {
+		t.Fatalf("expected identity with subject, got %#v", identity)
+	}
+}
+
+func TestParseClientIdentityFromXFCC_InvalidChain(t *testing.T) {
+	attackerCA, _ := generateTestCA(t, "Attacker CA", 101)
+	rootCert, rootKey := generateTestCA(t, "Zero-Trust Root CA", 102)
+	leafCert, _ := generateTestClientCert(t, "zero-trust-test-client", rootCert, rootKey, 3)
+
+	caBundlePath := createTempCertBundle(t, attackerCA)
+	t.Setenv("CLIENT_CA_BUNDLE", caBundlePath)
+
+	xfcc := buildXFCCFromCertPEM(certificateToPEM(t, leafCert))
+	_, err := ParseClientIdentityFromXFCC(xfcc)
+	if err == nil {
+		t.Fatal("expected chain validation to fail with mismatched trust bundle")
+	}
+}
+
+func generateTestCA(t *testing.T, commonName string, serial int64) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+
+	now := time.Now().UTC()
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: commonName},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create CA cert: %v", err)
+	}
+
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatalf("parse CA cert: %v", err)
+	}
+
+	return cert, key
+}
+
+func generateTestClientCert(t *testing.T, commonName string, issuer *x509.Certificate, issuerKey *rsa.PrivateKey, serial int64) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate client key: %v", err)
+	}
+
+	now := time.Now().UTC()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(12 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
+	if err != nil {
+		t.Fatalf("create client cert: %v", err)
+	}
+
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatalf("parse client cert: %v", err)
+	}
+
+	return cert, key
+}
+
+func certificateToPEM(t *testing.T, cert *x509.Certificate) string {
+	t.Helper()
+
+	buf := bytes.Buffer{}
+	if err := pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}); err != nil {
+		t.Fatalf("encode cert to PEM: %v", err)
+	}
+	return buf.String()
+}
+
+func createTempCertBundle(t *testing.T, cert *x509.Certificate) string {
+	t.Helper()
+
+	filePath := filepath.Join(t.TempDir(), "ca-bundle.pem")
+	if err := os.WriteFile(filePath, []byte(certificateToPEM(t, cert)), 0o644); err != nil {
+		t.Fatalf("write ca bundle: %v", err)
+	}
+	return filePath
+}
+
+func buildXFCCFromCertPEM(certPEM string) string {
+	return `Cert="` + url.QueryEscape(certPEM) + `"`
 }
 
 // Helper function

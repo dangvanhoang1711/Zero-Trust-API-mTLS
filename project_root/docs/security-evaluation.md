@@ -323,7 +323,7 @@ Step 4: ext_authz checks replay cache
 **Potential Issues**:
 - ⚠️ In-memory replay cache (not distributed)
 - ⚠️ No rate limiting (DoS from valid clients)
-- ⚠️ No scope enforcement (all-or-nothing access)
+- ⚠️ No fine-grained scope matrix (global scope checks available via `REQUIRED_SCOPE(S)`)
 
 **Verdict**: ✅ Implementation follows security best practices
 
@@ -331,8 +331,7 @@ Step 4: ext_authz checks replay cache
 
 **Security Tests**:
 - 51 unit tests (all passing)
-- 5 end-to-end security tests (all passing)
-- 12 benchmark tests (performance validated)
+- 12 end-to-end tests (8 functional tests + 4 security-attack scenarios, all passing)
 
 **Coverage**:
 - ✅ Token theft scenarios
@@ -362,7 +361,7 @@ Step 4: ext_authz checks replay cache
 - Hardware security modules (HSM)
 - Certificate revocation (CRL/OCSP)
 
-**Current Status**: ⚠️ CRL infrastructure exists but not enforced
+**Current Status**: 🟡 CRL infrastructure is configured in Envoy via `crl` (`/etc/envoy/tls/ca.crl`), but full runtime enforcement has not been verified in a clean Docker environment yet.
 
 **2. Replay Across Instances**
 
@@ -406,7 +405,7 @@ Step 4: ext_authz checks replay cache
 - Scope-based access control
 - Fine-grained authorization
 
-**Current Status**: ❌ Not implemented (all-or-nothing access)
+**Current Status**: ⚠️ Partially implemented (global scope check only; no per-route policy matrix)
 
 ### 6.3 Low-Impact Risks
 

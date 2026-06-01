@@ -9,6 +9,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 : "${KEYCLOAK_REALM:=zero-trust}"
 : "${DEMO_CLIENT_SECRET:=demo-client-secret}"
 : "${DEMO_MISMATCH_CLIENT_SECRET:=demo-client-mismatch-secret}"
+: "${DEMO_DPOP_CLIENT_SECRET:=demo-client-dpop-secret}"
+: "${KEYCLOAK_CONNECT_TIMEOUT:=3}"
+: "${KEYCLOAK_MAX_TIME:=8}"
 
 wait_for_keycloak() {
   local config_url="$KEYCLOAK_BASE_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration"
@@ -35,6 +38,9 @@ get_access_token() {
     demo-client-mismatch)
       client_secret="$DEMO_MISMATCH_CLIENT_SECRET"
       ;;
+    demo-client-dpop)
+      client_secret="$DEMO_DPOP_CLIENT_SECRET"
+      ;;
     *)
       echo "unsupported client_id: $client_id" >&2
       return 1
@@ -44,6 +50,8 @@ get_access_token() {
   response=$(curl --silent --show-error --fail \
     --request POST \
     --header "Content-Type: application/x-www-form-urlencoded" \
+    --connect-timeout "$KEYCLOAK_CONNECT_TIMEOUT" \
+    --max-time "$KEYCLOAK_MAX_TIME" \
     --data-urlencode "grant_type=client_credentials" \
     --data-urlencode "client_id=$client_id" \
     --data-urlencode "client_secret=$client_secret" \
@@ -62,6 +70,8 @@ api_call_status() {
   : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 
   curl --silent --show-error \
+    --connect-timeout "$KEYCLOAK_CONNECT_TIMEOUT" \
+    --max-time "$KEYCLOAK_MAX_TIME" \
     --output "$output_file" \
     --write-out "%{http_code}" \
     --cert "$CLIENT_CERT" \

@@ -156,6 +156,78 @@ func TestExtractCNFThumbprint_EmptyX5T(t *testing.T) {
 	}
 }
 
+func TestExtractCNFJWK_Success(t *testing.T) {
+	claims := map[string]any{
+		"cnf": map[string]any{
+			"jwk": map[string]any{
+				"kty": "RSA",
+				"n":   "test-n",
+				"e":   "AQAB",
+			},
+		},
+	}
+
+	jwk, err := extractCNFJWK(claims)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
+	if jwk["kty"] != "RSA" {
+		t.Errorf("expected kty RSA, got %v", jwk["kty"])
+	}
+}
+
+func TestExtractCNFJWK_MissingCNF(t *testing.T) {
+	claims := map[string]any{
+		"iss": "test",
+	}
+
+	_, err := extractCNFJWK(claims)
+	if err == nil {
+		t.Error("expected error for missing cnf claim, got nil")
+	}
+}
+
+func TestExtractCNFJWK_InvalidCNFType(t *testing.T) {
+	claims := map[string]any{
+		"cnf": "invalid-string",
+	}
+
+	_, err := extractCNFJWK(claims)
+	if err == nil {
+		t.Error("expected error for invalid cnf type, got nil")
+	}
+}
+
+func TestExtractCNFJWK_MissingJWK(t *testing.T) {
+	claims := map[string]any{
+		"cnf": map[string]any{
+			"x5t#S256": "123",
+		},
+	}
+
+	_, err := extractCNFJWK(claims)
+	if err == nil {
+		t.Error("expected error for missing cnf.jwk, got nil")
+	}
+}
+
+func TestExtractCNFJWK_MissingKTY(t *testing.T) {
+	claims := map[string]any{
+		"cnf": map[string]any{
+			"jwk": map[string]any{
+				"n": "test-n",
+				"e": "AQAB",
+			},
+		},
+	}
+
+	_, err := extractCNFJWK(claims)
+	if err == nil {
+		t.Error("expected error for missing kty in cnf.jwk, got nil")
+	}
+}
+
 func TestStringClaim_Success(t *testing.T) {
 	claims := map[string]any{
 		"sub": "test-user",
@@ -236,6 +308,60 @@ func TestAudienceClaim_InvalidType(t *testing.T) {
 	aud := audienceClaim(12345)
 	if aud != nil {
 		t.Errorf("expected nil for invalid type, got %v", aud)
+	}
+}
+
+func TestExtractScopeClaim_String(t *testing.T) {
+	scope := extractScopeClaim("read write admin")
+	if len(scope) != 3 {
+		t.Errorf("expected 3 scopes, got %d", len(scope))
+	}
+	if scope[0] != "read" || scope[1] != "write" || scope[2] != "admin" {
+		t.Errorf("unexpected scope values: %v", scope)
+	}
+}
+
+func TestExtractScopeClaim_Array(t *testing.T) {
+	scope := extractScopeClaim([]any{"read", "write admin", "  ", ""})
+	if len(scope) != 3 {
+		t.Errorf("expected 3 parsed scopes, got %d", len(scope))
+	}
+	if scope[1] != "write" || scope[2] != "admin" {
+		t.Errorf("unexpected scope values: %v", scope)
+	}
+}
+
+func TestExtractScopeClaim_Missing(t *testing.T) {
+	scope := extractScopeClaim(nil)
+	if scope != nil {
+		t.Errorf("expected nil for missing scope, got %v", scope)
+	}
+}
+
+func TestValidateScopes_Allowed(t *testing.T) {
+	err := ValidateScopes([]string{"read", "write", "admin"}, []string{"read", "write"})
+	if err != nil {
+		t.Errorf("expected scope validation to pass, got %v", err)
+	}
+}
+
+func TestValidateScopes_MissingRequired(t *testing.T) {
+	err := ValidateScopes([]string{"read", "admin"}, []string{"write"})
+	if err == nil {
+		t.Fatal("expected scope validation failure")
+	}
+	if !isForbidden(err) {
+		t.Fatalf("expected forbidden error, got %v", err)
+	}
+}
+
+func TestValidateScopes_MissingScopeClaim(t *testing.T) {
+	err := ValidateScopes(nil, []string{"read"})
+	if err == nil {
+		t.Fatal("expected scope validation failure")
+	}
+	if !isUnauthorized(err) {
+		t.Fatalf("expected unauthorized error, got %v", err)
 	}
 }
 

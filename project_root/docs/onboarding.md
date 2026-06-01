@@ -15,12 +15,13 @@ This guide describes how to onboard new clients to the Zero-Trust API Authentica
 - Replay protection using `jti` tracking
 
 **Not Implemented** (future work):
-- DPoP (RFC 9449) for mobile and browser clients
+- Full native DPoP (RFC 9449) for mobile/browser clients
 - Automated certificate management via cert-manager
 - Vault PKI runtime integration (scripts exist, not active in docker-compose)
 - Certificate revocation enforcement (CRL infrastructure exists, not enforced)
 - Kubernetes deployment (manifests exist, not runtime tested)
 - Distributed replay cache (current: in-memory per instance)
+- Mock/extend DPoP support using local key pair (see `clients/curl-scripts/06-ok-dpop-mock.sh`) is available for lab testing.
 
 ---
 
@@ -233,7 +234,7 @@ Provide to service:
 **Additional considerations**:
 - Issue certificates from separate intermediate CA for third parties (future: Vault PKI)
 - Implement stricter rate limiting per partner (not currently implemented)
-- Add scope-based access control (not currently implemented)
+- Add advanced scope-based access control (partially via `REQUIRED_SCOPE(S)` today)
 - Monitor usage patterns for anomalies
 - Provide API documentation and integration guides
 
@@ -241,7 +242,7 @@ Provide to service:
 
 **Step 8: Define access scope** (future work)
 
-Current implementation does not enforce scopes. Future work:
+Current implementation enforces required global scope claims via env var `REQUIRED_SCOPE(S)`. For full partner-level policy:
 - Define allowed scopes for partner
 - Add scope mapper to Keycloak client
 - Configure ext_authz policy enforcement
@@ -330,8 +331,11 @@ docker-compose ps
 # View logs
 docker-compose logs -f envoy ext_authz keycloak
 
-# Run security tests
+# Run functional suite (A-H)
 cd project_root && ./tests/run-all.sh
+
+# Run security attack scenarios (SEC-01..SEC-04)
+cd project_root && ./tests/security/run-all-security.sh
 
 # Stop services
 docker-compose down
@@ -405,6 +409,7 @@ docker-compose down
 1. Request new token (each token has unique `jti`)
 2. Do not reuse tokens across multiple requests if replay protection is strict
 3. Current replay window: 10 minutes (configurable via `REPLAY_TTL` env var)
+4. Replay cache size: 10,000 entries (configurable via `REPLAY_CACHE_MAX_ENTRIES` env var)
 
 ### TLS handshake fails
 
@@ -455,7 +460,7 @@ docker-compose down
 2. **Manual certificate management**: No automated issuance or renewal
 3. **CRL not enforced**: Revoked certificates not rejected until expiration
 4. **In-memory replay cache**: Not suitable for multi-instance deployments
-5. **No scope enforcement**: All authenticated clients have full access
+5. **Coarse scope enforcement**: Global scope claims are checked; per-route/verb policy matrix is not yet implemented
 6. **No rate limiting**: No protection against abuse from authenticated clients
 7. **Basic observability**: No metrics, tracing, or alerting
 8. **Vault PKI not active**: Scripts exist but not integrated into runtime
@@ -492,5 +497,6 @@ For production deployment, implement:
 
 For current demo environment:
 - Follow quickstart guide: `docs/quickstart.md`
-- Run security tests: `cd project_root && ./tests/run-all.sh`
+- Run functional tests: `cd project_root && ./tests/run-all.sh`
+- Run security attack scenarios: `cd project_root && ./tests/security/run-all-security.sh`
 - Review architecture: `docs/architecture.md`

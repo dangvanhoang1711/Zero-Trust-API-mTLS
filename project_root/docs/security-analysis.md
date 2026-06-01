@@ -104,7 +104,13 @@ This document analyzes the security properties of the Zero-Trust API Authenticat
 
 ## Tested Attack Scenarios
 
-All tests are automated in `project_root/tests/run-all.sh`.
+### Functional Test Suite
+
+Functional tests (A-H) are automated in `project_root/tests/run-all.sh`.
+
+### Security Attack Scenarios
+
+Additional attack-focused security tests are automated in `project_root/tests/security/run-all-security.sh`.
 
 ### Test A: Valid Authentication (Baseline)
 
@@ -156,6 +162,76 @@ All tests are automated in `project_root/tests/run-all.sh`.
 
 **Verification**: `project_root/clients/curl-scripts/05-fail-replay-jti.sh`
 
+### Test F: Expired Client Certificate
+
+**Scenario**: TLS handshake uses an expired client certificate from `tests/functional/fixtures`.
+
+**Expected result**: Request does not complete (TLS handshake failure).
+
+**Security property**: Expired identities are rejected before authorization logic is reached.
+
+**Verification**: `project_root/tests/functional/phase2-expired-cert.sh`
+
+### Test G: Revoked Client Certificate
+
+**Scenario**: TLS handshake uses a revoked client certificate from `tests/functional/fixtures`.
+
+**Expected result**: Request does not complete (TLS handshake failure in the certificate validation path).
+
+**Security property**: Revoked credentials are refused by certificate trust checks.
+
+**Verification**: `project_root/tests/functional/phase2-revoked-cert.sh`
+
+### Test H: Algorithm Downgrade (`alg: none`)
+
+**Scenario**: A JWT with `alg: none` is presented with a valid mTLS client certificate.
+
+**Expected result**: `401 Unauthorized`.
+
+**Security property**: Restricting accepted algorithms prevents downgrade attacks.
+
+**Verification**: `project_root/tests/functional/phase2-alg-none.sh`
+
+### Test SEC-01: MITM / Replay Without Client Key
+
+**Scenario**: Valid JWT is sent without presenting any client TLS certificate/key.
+
+**Expected result**: TLS handshake is blocked (`000`).
+
+**Security property**: mTLS client authentication is enforced at transport layer, preventing unauthenticated interception/replay.
+
+**Verification**: `project_root/tests/security/01-mitm-no-client-key.sh`
+
+### Test SEC-02: Token Theft Simulation
+
+**Scenario**: A stolen bearer token is used with a valid TLS client certificate that does not match the certificate bound into the token.
+
+**Expected result**: `403 Forbidden`.
+
+**Security property**: Token-certificate binding rejects bearer-token replay from non-bound identities.
+
+**Verification**: `project_root/tests/security/02-token-theft-without-bound-key.sh`
+
+### Test SEC-03: Certificate Forgery
+
+**Scenario**: A self-signed client certificate is used to access the gateway.
+
+**Expected result**: TLS handshake fails (`000`).
+
+**Security property**: Gateway only accepts certificates from trusted CA; prevents forging by attacker-issued certs.
+
+**Verification**: `project_root/tests/security/03-certificate-forgery.sh`
+
+### Test SEC-04: Signature Forgery
+
+**Scenario**: JWT signature is tampered while keeping header/payload unchanged.
+
+**Expected result**: `401 Unauthorized`.
+
+**Security property**: JWT signature verification rejects token tampering.
+
+**Verification**: `project_root/tests/security/04-signature-forgery-jwt.sh`
+
 ## Security Limitations and Future Work
 
 ### 1. Replay Cache Scalability
@@ -178,11 +254,15 @@ All tests are automated in `project_root/tests/run-all.sh`.
 
 ### 3. DPoP (Demonstration of Proof-of-Possession)
 
-**Current state**: Not implemented.
+**Current state**: Partially implemented (basic RFC 9449 checks).
 
-**Limitation**: Mobile/browser clients cannot use mTLS-bound tokens.
+- **Scope**:
+  - Accepts `cnf.jkt`-bound JWTs.
+  - Verifies DPoP JWS signature using embedded JWK header.
+  - Validates `htu`, `htm`, `iat`, and `jti` claims.
+  - Matches RFC 7638 thumbprint of proof public key with token `cnf.jkt`.
 
-**Future work**: Implement RFC 9449 DPoP for ephemeral key binding.
+**Current limitation**: Full nonce/anti-replay coordination and advanced failure-mode policies are not yet implemented. Tokens are still validated once plus replay cache on JWT `jti`.
 
 **Design notes**: `project_root/docs/token-binding-design.md`
 
@@ -212,7 +292,7 @@ All tests are automated in `project_root/tests/run-all.sh`.
 
 **Limitation**: No protection against abuse from authenticated clients.
 
-**Future work**: Implement per-client rate limiting and scope-based access control.
+**Future work**: Implement per-client rate limiting and fine-grained (route/action) scope-based access control.
 
 ### 7. Observability and Monitoring
 
@@ -246,17 +326,24 @@ This implementation follows:
 
 ## Verification
 
-Run the full security test suite:
+Run the full functional test suite:
 
 ```bash
 cd project_root
 ./tests/run-all.sh
 ```
 
+Run the full security-attack suite:
+
+```bash
+cd project_root
+./tests/security/run-all-security.sh
+```
+
 Expected output:
 
 ```
-All MVP demo tests passed
+All security tests passed
 ```
 
 ## Conclusion

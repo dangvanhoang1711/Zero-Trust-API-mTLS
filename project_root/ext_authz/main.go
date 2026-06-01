@@ -1,16 +1,20 @@
 package main
 
 import (
+	"crypto/rand"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"strings"
+	"strconv"
 	"sync"
+	"strings"
 	"time"
 
+	"ext-authz/internal/cache"
 	"ext-authz/internal/auth"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
@@ -24,7 +28,15 @@ type authzServer struct {
 	authv3.UnimplementedAuthorizationServer
 	jwtVerifier *auth.JWTVerifier
 	replayCache *replayCache
-	configErr   error
+	requiredScopes   []string
+	configErr        error
+	dpopNonceEnabled bool
+	dpopNonce       string
+	dpopNonceTTL    time.Duration
+	dpopNonceExp    time.Time
+	dpopNonceMu     sync.Mutex
+	policy          *auth.PolicyConfig
+	rateLimiter     *cache.RateLimiter
 }
 
 func main() {
@@ -57,6 +69,7 @@ func main() {
 // 4. Replay protection (jti tracking)
 func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
+	httpRequest := req.GetAttributes().GetRequest().GetHttp()
 
 	if s.configErr != nil {
 		return deny(http.StatusUnauthorized, "authorization service configuration error"), nil
@@ -75,8 +88,71 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 	}
 
 	// Step 3: Verify token is bound to the presented certificate (proof-of-possession)
-	if err := auth.ValidateTokenCertBinding(tokenClaims.CnfX5TS256, identity.Thumbprint); err != nil {
+	if strings.TrimSpace(tokenClaims.CnfX5TS256) != "" {
+		if err := auth.ValidateTokenCertBinding(tokenClaims.CnfX5TS256, identity.Thumbprint); err != nil {
+			return mapAuthErr(err), nil
+		}
+	}
+
+	requestMethod := strings.TrimSpace(httpRequest.GetMethod())
+	requestPath := strings.TrimSpace(httpRequest.GetPath())
+	requestHost := strings.TrimSpace(httpRequest.GetHost())
+	if requestHost == "" {
+		requestHost = getHeader(headers, "host")
+	}
+
+	if strings.TrimSpace(tokenClaims.CnfJKT) != "" {
+		requiredNonce := ""
+		if s.dpopNonceEnabled {
+			requiredNonce = s.currentDPoPNonce()
+		}
+		requestURL := buildRequestURL(httpRequest.GetScheme(), httpRequest.GetHost(), requestPath)
+		if err := auth.ValidateDPoPBinding(
+			tokenClaims.CnfJKT,
+			getHeader(headers, "dpop"),
+			requestMethod,
+			requestURL,
+			parseDurationEnv("DPoP_MAX_AGE", 2*time.Minute),
+			parseDurationEnv("DPoP_CLOCK_SKEW", 2*time.Second),
+			requiredNonce,
+		); err != nil {
+			return mapAuthErr(err), nil
+		}
+		if s.dpopNonceEnabled {
+			s.rotateDPoPNonce()
+		}
+	}
+
+	if strings.TrimSpace(tokenClaims.CnfJKT) == "" && len(tokenClaims.CnfJWK) > 0 {
+		if err := auth.ValidateHoKBinding(
+			tokenClaims.CnfJWK,
+			requestMethod,
+			requestPath,
+			requestHost,
+			headers,
+			getHeader(headers, "signature"),
+		); err != nil {
+			return mapAuthErr(err), nil
+		}
+	}
+
+	policyDecision := s.policy.Evaluate(auth.PolicyRequest{
+		Method:   requestMethod,
+		Path:     requestPath,
+		Claims:   tokenClaims,
+		Identity: identity,
+	})
+	if !policyDecision.Allowed {
+		return deny(policyDecision.HTTPStatus, policyDecision.Reason), nil
+	}
+
+	requiredScopes := mergeStringSlices(s.requiredScopes, policyDecision.RequiredScopes)
+	if err := auth.ValidateScopes(tokenClaims.Scopes, requiredScopes); err != nil {
 		return mapAuthErr(err), nil
+	}
+
+	if err := s.enforceRateLimit(policyDecision.RateLimit, tokenClaims, identity); err != nil {
+		return deny(err.HTTPStatus, err.Message), nil
 	}
 
 	// Step 4: Check for replay attacks using JWT ID
@@ -84,7 +160,11 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		return mapAuthErr(err), nil
 	}
 
-	return allow(tokenClaims.Subject, identity.Subject), nil
+	dpopNonce := ""
+	if s.dpopNonceEnabled {
+		dpopNonce = s.currentDPoPNonce()
+	}
+	return allow(tokenClaims.Subject, identity.Subject, dpopNonce), nil
 }
 
 func getHeader(headers map[string]string, name string) string {
@@ -100,6 +180,26 @@ func getHeader(headers map[string]string, name string) string {
 	return ""
 }
 
+func buildRequestURL(scheme string, host string, path string) string {
+	protocol := strings.TrimSpace(strings.ToLower(scheme))
+	requestHost := strings.TrimSpace(host)
+	requestPath := strings.TrimSpace(path)
+
+	if requestHost == "" {
+		return ""
+	}
+
+	if protocol == "" {
+		protocol = "https"
+	}
+
+	if requestPath == "" {
+		requestPath = "/"
+	}
+
+	return protocol + "://" + requestHost + requestPath
+}
+
 func buildAuthzServer(ctx context.Context) *authzServer {
 	issuer := strings.TrimSpace(firstNonEmpty(os.Getenv("JWT_ISSUER"), os.Getenv("KEYCLOAK_ISSUER_URL")))
 	audience := strings.TrimSpace(os.Getenv("JWT_AUDIENCE"))
@@ -109,6 +209,7 @@ func buildAuthzServer(ctx context.Context) *authzServer {
 	}
 
 	jwksURL := strings.TrimSpace(os.Getenv("JWKS_URL"))
+	requiredScopes := parseScopesEnv("REQUIRED_SCOPE", "REQUIRED_SCOPES")
 
 	jwksTTL := parseDurationEnv("JWKS_REFRESH_INTERVAL", 5*time.Minute)
 	jwksCache := auth.NewJWKSCache(jwksURL, jwksTTL)
@@ -116,12 +217,95 @@ func buildAuthzServer(ctx context.Context) *authzServer {
 	jwksCache.Start(ctx)
 
 	verifier := auth.NewJWTVerifier(issuer, audience, jwksCache)
-	replay := newReplayCache(parseDurationEnv("REPLAY_TTL", 10*time.Minute))
+	replay := newReplayCache(
+		parseDurationEnv("REPLAY_TTL", 10*time.Minute),
+		parseIntEnv("REPLAY_CACHE_MAX_ENTRIES", 10000),
+	)
+	dpopNonceEnabled := parseBoolEnv("DPoP_REQUIRE_NONCE", false)
+	dpopNonceTTL := parseDPoPNonceTTL("DPoP_NONCE_TTL", 5*time.Minute)
+	policyFile := strings.TrimSpace(os.Getenv("AUTHZ_POLICY_FILE"))
+	policy, err := auth.LoadPolicyFromFile(policyFile)
+	if err != nil {
+		return &authzServer{configErr: fmt.Errorf("failed to load policy: %w", err)}
+	}
+	if policy == nil {
+		policy = auth.NewAllowPolicy()
+	}
 
 	return &authzServer{
-		jwtVerifier: verifier,
-		replayCache: replay,
+		jwtVerifier:      verifier,
+		replayCache:      replay,
+		requiredScopes:   requiredScopes,
+		dpopNonceEnabled: dpopNonceEnabled,
+		dpopNonceTTL:     dpopNonceTTL,
+		policy:           policy,
+		rateLimiter:      cache.NewRateLimiter(),
 	}
+}
+
+func (s *authzServer) enforceRateLimit(policyRateLimit *auth.RateLimitDecision, tokenClaims *auth.TokenClaims, identity *auth.ClientIdentity) *auth.AuthError {
+	if policyRateLimit == nil || !policyRateLimit.Enabled || s.rateLimiter == nil {
+		return nil
+	}
+
+	identityToken := rateLimitIdentity(policyRateLimit.IdentityBy, tokenClaims, identity)
+	if strings.TrimSpace(identityToken) == "" {
+		return &auth.AuthError{HTTPStatus: http.StatusUnauthorized, Message: "missing identity for rate limiting"}
+	}
+
+	if allowed := s.rateLimiter.Allow(identityToken, policyRateLimit.MaxRequests, policyRateLimit.Window); !allowed {
+		return &auth.AuthError{HTTPStatus: http.StatusTooManyRequests, Message: "rate limit exceeded"}
+	}
+
+	return nil
+}
+
+func rateLimitIdentity(mode string, tokenClaims *auth.TokenClaims, identity *auth.ClientIdentity) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "cert_subject":
+		if identity != nil && strings.TrimSpace(identity.Subject) != "" {
+			return "cert_subject:" + strings.TrimSpace(identity.Subject)
+		}
+	case "cert_thumbprint":
+		if identity != nil && strings.TrimSpace(identity.Thumbprint) != "" {
+			return "cert_thumbprint:" + strings.TrimSpace(identity.Thumbprint)
+		}
+	case "sub", "subject", "token_subject":
+		if strings.TrimSpace(tokenClaims.Subject) != "" {
+			return "token_subject:" + strings.TrimSpace(tokenClaims.Subject)
+		}
+	}
+
+	if strings.TrimSpace(tokenClaims.Subject) != "" {
+		return "token_subject:" + strings.TrimSpace(tokenClaims.Subject)
+	}
+	if identity != nil && strings.TrimSpace(identity.Subject) != "" {
+		return "cert_subject:" + strings.TrimSpace(identity.Subject)
+	}
+	return ""
+}
+
+func parseScopesEnv(names ...string) []string {
+	for _, name := range names {
+		raw := strings.TrimSpace(os.Getenv(name))
+		if raw == "" {
+			continue
+		}
+
+		scopes := make([]string, 0)
+		normalized := strings.ReplaceAll(raw, ",", " ")
+		for _, scope := range strings.Fields(normalized) {
+			scope = strings.TrimSpace(scope)
+			if scope != "" {
+				scopes = append(scopes, scope)
+			}
+		}
+
+		if len(scopes) > 0 {
+			return scopes
+		}
+	}
+	return nil
 }
 
 func parseDurationEnv(name string, fallback time.Duration) time.Duration {
@@ -136,6 +320,69 @@ func parseDurationEnv(name string, fallback time.Duration) time.Duration {
 	}
 
 	return d
+}
+
+func parseIntEnv(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
+}
+
+func parseBoolEnv(name string, fallback bool) bool {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
+	if raw == "" {
+		return fallback
+	}
+
+	if value, err := strconv.ParseBool(raw); err == nil {
+		return value
+	}
+
+	return fallback
+}
+
+func parseDPoPNonceTTL(name string, fallback time.Duration) time.Duration {
+	return parseDurationEnv(name, fallback)
+}
+
+func (s *authzServer) currentDPoPNonce() string {
+	if !s.dpopNonceEnabled {
+		return ""
+	}
+
+	s.dpopNonceMu.Lock()
+	defer s.dpopNonceMu.Unlock()
+
+	if strings.TrimSpace(s.dpopNonce) == "" || time.Now().After(s.dpopNonceExp) {
+		s.dpopNonce = newDPoPNonce()
+		s.dpopNonceExp = time.Now().Add(s.dpopNonceTTL)
+	}
+
+	return s.dpopNonce
+}
+
+func (s *authzServer) rotateDPoPNonce() {
+	s.dpopNonceMu.Lock()
+	s.dpopNonce = newDPoPNonce()
+	s.dpopNonceExp = time.Now().Add(s.dpopNonceTTL)
+	s.dpopNonceMu.Unlock()
+}
+
+func newDPoPNonce() string {
+	seed := make([]byte, 16)
+	if _, err := rand.Read(seed); err != nil {
+		return "fallback-nonce"
+	}
+
+	return base64.RawURLEncoding.EncodeToString(seed)
 }
 
 func mapAuthErr(err error) *authv3.CheckResponse {
@@ -155,6 +402,10 @@ func deny(httpStatus int, message string) *authv3.CheckResponse {
 		statusCode = codes.PermissionDenied
 		typeCode = typev3.StatusCode_Forbidden
 	}
+	if httpStatus == http.StatusTooManyRequests {
+		statusCode = codes.ResourceExhausted
+		typeCode = typev3.StatusCode_TooManyRequests
+	}
 
 	return &authv3.CheckResponse{
 		Status: status.New(statusCode, message).Proto(),
@@ -167,7 +418,7 @@ func deny(httpStatus int, message string) *authv3.CheckResponse {
 	}
 }
 
-func allow(user string, certSubject string) *authv3.CheckResponse {
+func allow(user string, certSubject string, dpopNonce string) *authv3.CheckResponse {
 	headers := []*corev3.HeaderValueOption{
 		{
 			Header:       &corev3.HeaderValue{Key: "x-authz-result", Value: "allow"},
@@ -189,6 +440,13 @@ func allow(user string, certSubject string) *authv3.CheckResponse {
 		})
 	}
 
+	if strings.TrimSpace(dpopNonce) != "" {
+		headers = append(headers, &corev3.HeaderValueOption{
+			Header:       &corev3.HeaderValue{Key: "x-dpop-nonce", Value: dpopNonce},
+			AppendAction: corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD,
+		})
+	}
+
 	return &authv3.CheckResponse{
 		Status: status.New(codes.OK, "allowed").Proto(),
 		HttpResponse: &authv3.CheckResponse_OkResponse{
@@ -206,52 +464,36 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// replayCache prevents replay attacks by tracking JWT IDs (jti claim).
-// Uses in-memory storage with TTL-based eviction.
-// Note: Not suitable for multi-instance deployments (use Redis for production).
-type replayCache struct {
-	ttl   time.Duration        // Time window for replay protection
-	mu    sync.Mutex           // Protects concurrent access
-	items map[string]time.Time // Maps jti to first-seen timestamp
-	last  time.Time            // Last eviction time
+func mergeStringSlices(left, right []string) []string {
+	out := make([]string, 0, len(left)+len(right))
+	out = append(out, left...)
+	out = append(out, right...)
+	return out
 }
 
-// newReplayCache creates a replay cache with the specified TTL.
-// Default TTL is 10 minutes if ttl <= 0.
-func newReplayCache(ttl time.Duration) *replayCache {
-	if ttl <= 0 {
-		ttl = 10 * time.Minute
+type replayCache = cache.ReplayCache
+
+// newReplayCache keeps the existing authz server factory API while delegating
+// implementation to the internal cache package.
+func newReplayCache(ttl time.Duration, maxEntries ...int) *replayCache {
+	if len(maxEntries) == 0 {
+		return cache.NewReplayCacheWithConfig(
+			ttl,
+			10000,
+			parseStringEnv("REPLAY_BACKEND"),
+			parseStringEnv("REPLAY_REDIS_URL"),
+			parseStringEnv("REPLAY_REDIS_KEY_PREFIX"),
+		)
 	}
-	return &replayCache{ttl: ttl, items: make(map[string]time.Time, 256), last: time.Now()}
+	return cache.NewReplayCacheWithConfig(
+		ttl,
+		maxEntries[0],
+		parseStringEnv("REPLAY_BACKEND"),
+		parseStringEnv("REPLAY_REDIS_URL"),
+		parseStringEnv("REPLAY_REDIS_KEY_PREFIX"),
+	)
 }
 
-// MarkIfNew checks if a JWT ID has been seen before within the TTL window.
-// Returns error if jti is empty or already exists (replay detected).
-// Thread-safe through mutex protection.
-func (c *replayCache) MarkIfNew(jti string) error {
-	if strings.TrimSpace(jti) == "" {
-		return &auth.AuthError{HTTPStatus: http.StatusUnauthorized, Message: "missing jti claim"}
-	}
-
-	now := time.Now()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if now.Sub(c.last) >= c.ttl {
-		cutoff := now.Add(-c.ttl)
-		for key, seenAt := range c.items {
-			if seenAt.Before(cutoff) {
-				delete(c.items, key)
-			}
-		}
-		c.last = now
-	}
-
-	if _, exists := c.items[jti]; exists {
-		return &auth.AuthError{HTTPStatus: http.StatusForbidden, Message: "replay detected"}
-	}
-
-	c.items[jti] = now
-	return nil
+func parseStringEnv(name string) string {
+	return strings.TrimSpace(os.Getenv(name))
 }

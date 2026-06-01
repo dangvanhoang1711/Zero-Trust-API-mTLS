@@ -4,9 +4,17 @@
 
 1. Bootstrap Vault PKI with the commands in `docs/pki-architecture.md`.
 2. Or run `infra/vault/bootstrap-pki.sh` to enable the PKI engines, create roles, issue the Envoy server certificate, export `chain.pem`, and fetch `ca.crl`.
-3. Apply `infra/cert-manager/issuer.yaml`.
-4. Apply `infra/cert-manager/certificate.yaml`.
-5. Confirm Secrets `envoy-server-tls` and `client-mtls` exist.
+3. If you want one-command bootstrap, use:
+
+   ```bash
+   VAULT_ADDR="http://127.0.0.1:8200" \
+   VAULT_TOKEN="root" \
+   BOOTSTRAP_VAULT=true \
+   ./project_root/scripts/setup-k8s-cluster.sh --bootstrap-vault
+   ```
+
+4. Apply `infra/cert-manager/issuer.yaml` and `infra/cert-manager/certificate.yaml` (the helper script can also apply them automatically).
+5. Confirm Secrets `vault-ca-bundle`, `envoy-client-trust`, `envoy-server-tls`, and `client-mtls` exist.
 
 ## CRL refresh
 

@@ -8,6 +8,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	google.golang.org/grpc v1.76.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

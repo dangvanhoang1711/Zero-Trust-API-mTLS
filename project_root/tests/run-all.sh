@@ -58,6 +58,12 @@ run_test "Test D: Valid token with wrong cnf.x5t#S256 binding → 403 Forbidden"
 
 run_test "Test E: Replay same JWT jti → second request 403 Forbidden" \
   "$PROJECT_ROOT/clients/curl-scripts/05-fail-replay-jti.sh"
+run_test "Test F: Expired client certificate → TLS handshake failure" \
+  "$PROJECT_ROOT/tests/functional/phase2-expired-cert.sh"
+run_test "Test G: Revoked client certificate → TLS handshake failure" \
+  "$PROJECT_ROOT/tests/functional/phase2-revoked-cert.sh"
+run_test "Test H: Algorithm downgrade attempt (alg: none) → 401 Unauthorized" \
+  "$PROJECT_ROOT/tests/functional/phase2-alg-none.sh"
 
 echo ""
 echo "=========================================="

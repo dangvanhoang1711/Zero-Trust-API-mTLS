@@ -22,19 +22,39 @@ services:
       context: ./project_root/ext_authz
     depends_on:
       - keycloak
+      - replay-cache
     environment:
       PORT: "50051"
       JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
       JWT_AUDIENCE: "api-gateway"
       JWKS_REFRESH_INTERVAL: "5m"
       REPLAY_TTL: "10m"
+      REQUIRED_SCOPE: "${REQUIRED_SCOPE:-}"
+      REQUIRED_SCOPES: "${REQUIRED_SCOPES:-}"
+      AUTHZ_POLICY_FILE: "${AUTHZ_POLICY_FILE:-}"
+      REPLAY_BACKEND: "${REPLAY_BACKEND:-memory}"
+      REPLAY_REDIS_URL: "${REPLAY_REDIS_URL:-redis://replay-cache:6379/0}"
+      REPLAY_REDIS_KEY_PREFIX: "${REPLAY_REDIS_KEY_PREFIX:-zero-trust:replay}"
     expose:
       - "50051"
+    restart: unless-stopped
+
+  replay-cache:
+    image: redis:7-alpine
     restart: unless-stopped
 
   backend:
     build:
       context: ./project_root/infra/services/echo
+    environment:
+      PORT: "8080"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  protected-api:
+    build:
+      context: ./project_root/infra/services/protected-api
     environment:
       PORT: "8080"
     expose:
@@ -51,10 +71,12 @@ services:
       - "warning"
     volumes:
       - ./project_root/envoy_config/envoy.yaml:/etc/envoy/envoy.yaml:ro
-      - ./project_root/infra/certs:/etc/envoy/tls:ro
+      - ./project_root/envoy_config/tls:/etc/envoy/tls:ro
     ports:
+      - "10001:10001"
       - "10000:10000"
     depends_on:
       - ext_authz
       - backend
+      - protected-api
     restart: unless-stopped

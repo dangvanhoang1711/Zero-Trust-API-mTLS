@@ -1,0 +1,26 @@
+version: "1"
+default_action: "allow"
+
+# Optional global policy (applies to all routes).
+global:
+  action: "allow"
+  # Enable global limits as an example fallback
+  rate_limit:
+    enabled: false
+
+rules:
+  # Protect protected endpoints with token binding and scope
+  - name: protected-endpoints
+    match:
+      path_prefix: "/protected"
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    conditions:
+      required_scopes:
+        - "api:read"
+      token_subjects:
+        - "integration-user"
+    rate_limit:
+      enabled: true
+      max_requests: 30
+      window: "1m"
+      identity_by: "sub"

@@ -223,11 +223,11 @@ This document analyzes security threats to the Zero-Trust API Authentication sys
 
 **Mitigations**:
 - ✅ Replay cache entries expire after TTL
-- ⚠️ No max cache size limit
+- ✅ Max cache size is bounded and evicts oldest entries when full
 
-**Residual risk**: Medium. Cache could grow unbounded.
+**Residual risk**: Reduced. Cache can still fill to configured max before eviction; tune `REPLAY_CACHE_MAX_ENTRIES`.
 
-**Recommendation**: Implement LRU eviction with max size limit.
+**Recommendation**: Keep `REPLAY_CACHE_MAX_ENTRIES` tuned for your traffic profile and move to Redis for multi-instance deployments.
 
 ### E — Elevation of Privilege
 
@@ -276,11 +276,11 @@ This document analyzes security threats to the Zero-Trust API Authentication sys
 
 **Mitigations**:
 - ✅ JWT signature prevents tampering
-- ⚠️ No scope enforcement in ext_authz
+- ✅ Global scope enforcement in ext_authz via `REQUIRED_SCOPE(S)`
 
-**Residual risk**: Medium. Backend must enforce scopes.
+**Residual risk**: Medium. Fine-grained route/action policy still requires backend or policy engine.
 
-**Recommendation**: Implement scope checking in ext_authz policy layer.
+**Recommendation**: Extend ext_authz to support route/verb specific scope mapping.
 
 ## Attack Scenarios
 
@@ -387,7 +387,7 @@ This document analyzes security threats to the Zero-Trust API Authentication sys
 6. **Add scope-based access control** in ext_authz
 7. **Use short-lived certificates** (24-48 hours) with automated renewal
 8. **Implement request size and timeout limits**
-9. **Add replay cache max size** with LRU eviction
+9. **Tune `REPLAY_CACHE_MAX_ENTRIES`** and monitor eviction metrics
 10. **Enable TLS for internal service communication**
 
 ### Low Priority

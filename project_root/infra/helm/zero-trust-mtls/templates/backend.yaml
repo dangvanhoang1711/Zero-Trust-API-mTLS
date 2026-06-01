@@ -1,0 +1,40 @@
+{{- if .Values.backend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-echo
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+    app: {{ .Values.backend.serviceName }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.backend.serviceName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.backend.serviceName }}
+    spec:
+      containers:
+        - name: echo
+          image: "{{ .Values.backend.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.backend.containerPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backend.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Values.backend.serviceName }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.backend.servicePort }}
+      targetPort: {{ .Values.backend.targetPort }}
+  type: ClusterIP
+{{- end }}

@@ -4,6 +4,21 @@
 
 This document describes operational resilience testing and recommendations for the Zero-Trust API Authentication system, covering failure scenarios, recovery procedures, and high-availability considerations.
 
+## Automated Resilience Suite
+
+Run all operational resilience smoke tests:
+
+```bash
+cd project_root/tests/functional
+./run-all-resilience.sh
+```
+
+Included scenarios:
+- `6.4-cert-rotation.sh`: cert-rotation smoke check (requires `ROTATED_CLIENT_CERT` and `ROTATED_CLIENT_KEY`)
+- `6.4-jwks-rotation.sh`: JWKS rotation command hook (`JWK_ROTATION_CMD`)
+- `6.4-idp-unavailability.sh`: IdP stop/start behavior, cached JWKS resilience
+- `6.4-replay-cache-failure.sh`: replay-cache reset behavior on ext_authz restart
+
 ## Tested Resilience Scenarios
 
 ### 1. Normal Operation Baseline
@@ -29,7 +44,7 @@ cd project_root && ./tests/run-all.sh
 
 **Scenario**: Client certificate expires and must be renewed without service interruption.
 
-**Current state**: Not tested in automated suite.
+**Current state**: Automated smoke test available (`tests/functional/6.4-cert-rotation.sh`) with explicit required inputs for rotated assets.
 
 **Expected behavior**:
 1. Client obtains new certificate from CA
@@ -43,8 +58,8 @@ cd project_root && ./tests/run-all.sh
 - Client uses new certificate with old token → binding mismatch, `403 Forbidden`
 
 **Recovery**:
-- Automated certificate renewal via cert-manager (not implemented)
-- Manual certificate renewal and token refresh
+- Automated certificate renewal via cert-manager when cert-manager manifests are applied.
+- Check for renewal with `CHECK_TIMEOUT_SECONDS` + `tests/functional/phase2-renewal.sh` on the `client-mtls` secret.
 
 **Test plan**:
 ```bash
@@ -64,13 +79,14 @@ curl --cert client-new.crt --key client.key \
   https://localhost:10000/
 ```
 
-**Recommendation**: Implement automated testing in `tests/functional/cert-rotation.sh`.
+**Recommendation**: Keep this check in `tests/functional/6.4-cert-rotation.sh` and add a generated rotated-certificate fixture when running in CI.
 
 ### 3. JWKS Key Rotation
 
 **Scenario**: Keycloak rotates signing keys without service restart.
 
-**Current state**: JWKS cache supports rotation but not tested.
+**Current state**: Scripted check available (`tests/functional/6.4-jwks-rotation.sh`) using `JWK_ROTATION_CMD`.
+If your environment exposes a deterministic Keycloak key-rotation command, set it and run the script to validate post-rotation auth behavior.
 
 **Expected behavior**:
 1. Keycloak generates new signing key
@@ -111,13 +127,13 @@ curl --cert client.crt --key client.key \
   https://localhost:10000/
 ```
 
-**Recommendation**: Implement automated testing in `tests/functional/jwks-rotation.sh`.
+**Recommendation**: Keep this check in `tests/functional/6.4-jwks-rotation.sh` and set `JWK_ROTATION_CMD` in environments that can execute Keycloak admin operations.
 
 ### 4. IdP Unavailability
 
 **Scenario**: Keycloak becomes unavailable (network partition, service crash, maintenance).
 
-**Current state**: Not tested.
+**Current state**: Automated in `tests/functional/6.4-idp-unavailability.sh`.
 
 **Expected behavior**:
 1. Keycloak becomes unreachable
@@ -157,7 +173,7 @@ docker-compose start keycloak
 ```
 
 **Recommendation**: 
-- Implement automated testing in `tests/functional/idp-unavailable.sh`
+- Keep `tests/functional/6.4-idp-unavailability.sh` in CI or pre-merge checks.
 - Configure JWKS cache TTL > typical outage duration (e.g., 1 hour)
 - Monitor JWKS refresh failures and alert
 
@@ -165,7 +181,7 @@ docker-compose start keycloak
 
 **Scenario**: Replay cache becomes unavailable or corrupted.
 
-**Current state**: In-memory cache, no external dependency.
+**Current state**: In-memory cache by default with optional Redis backend (`REPLAY_BACKEND=redis`), documented for distributed deployments.
 
 **Expected behavior** (if using Redis):
 1. Redis becomes unavailable
@@ -176,23 +192,21 @@ docker-compose start keycloak
 
 **Current implementation**: In-memory cache, no external failure mode.
 
-**Future consideration** (Redis deployment):
-- Implement circuit breaker for Redis
-- Fall back to local cache on Redis failure
-- Alert on replay cache unavailability
+**Failure mode for Redis deployment**:
+- Prefer availability by falling back to local cache if Redis cannot be reached.
+- Alert on replay cache backend connectivity issues.
+- Track replay hit rate and Redis round-trip latency via middleware metrics in production.
 
-**Test plan** (future):
+**Test plan** (current automated behavior check):
 ```bash
-# Stop Redis
-docker-compose stop redis
+# Prepare a replay token and confirm first use is allowed, second is rejected
+curl -H "Authorization: Bearer $TOKEN" --cert client.crt --key client.key --cacert root-ca.crt https://localhost:10000
 
-# Verify system behavior (fail-open or fail-closed)
-curl --cert client.crt --key client.key \
-  -H "Authorization: Bearer $TOKEN" \
-  https://localhost:10000/
+# Restart ext_authz to simulate in-memory cache reset
+docker-compose restart ext_authz
 
-# Restart Redis
-docker-compose start redis
+# Re-run same token to confirm cache reset behavior in single-instance topology
+curl -H "Authorization: Bearer $TOKEN" --cert client.crt --key client.key --cacert root-ca.crt https://localhost:10000
 ```
 
 **Recommendation**: Document desired failure mode before implementing distributed cache.
