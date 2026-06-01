@@ -13,7 +13,7 @@ app = Flask(__name__)
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CERTS_DIR = os.path.join(BASE_DIR, "infra", "certs")
-CLIENT_CERT = os.path.join(CERTS_DIR, "client.crt")
+CLIENT_CERT = os.path.join(CERTS_DIR, "client-chain.crt")
 CLIENT_KEY = os.path.join(CERTS_DIR, "client.key")
 CA_CERT = os.path.join(CERTS_DIR, "root-ca.crt")
 SERVER_CHAIN = os.path.join(CERTS_DIR, "server-chain.crt")

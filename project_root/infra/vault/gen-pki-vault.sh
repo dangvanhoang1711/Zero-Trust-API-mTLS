@@ -12,6 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # = project_root/ (parent of infra/)
+
 PKI_DIR="$PROJECT_ROOT/infra/pki-vault"
 CERTS_DIR="$PROJECT_ROOT/infra/certs"
 ENVOY_TLS_DIR="$PROJECT_ROOT/envoy_config/tls"
@@ -38,39 +39,52 @@ echo "=== 2. Root CA (pki-root engine, self-signed, 10yr) ==="
 VAULT secrets enable -path=pki-root pki 2>/dev/null || true
 VAULT secrets tune -max-lease-ttl=87600h pki-root
 
-VAULT write -field=certificate pki-root/root/generate/internal \
-  common_name="Zero Trust Root CA" \
-  issuer_name="zero-trust-root" \
-  ttl=87600h > "$PKI_DIR/root-ca.crt"
-echo "  Root CA: $PKI_DIR/root-ca.crt"
+if ! VAULT read pki-root/issuer/zero-trust-root > /dev/null 2>&1; then
+  VAULT write -field=certificate pki-root/root/generate/internal \
+    common_name="Zero Trust Root CA" \
+    issuer_name="zero-trust-root" \
+    ttl=87600h > "$PKI_DIR/root-ca.crt"
+  echo "  Root CA: $PKI_DIR/root-ca.crt (created)"
+else
+  echo "  Root CA already exists, fetching existing cert..."
+  VAULT read -field=certificate pki-root/issuer/zero-trust-root > "$PKI_DIR/root-ca.crt"
+  echo "  Root CA: $PKI_DIR/root-ca.crt (fetched existing)"
+fi
 
 VAULT write pki-root/config/urls \
   issuing_certificates="http://vault:8200/v1/pki-root/ca" \
-  crl_distribution_points="http://vault:8200/v1/pki-root/crl"
+  crl_distribution_points="http://vault:8200/v1/pki-root/crl" 2>/dev/null || true
 
 echo ""
 echo "=== 3. RA Intermediate CA (pki-int engine, 5yr, signed by Root) ==="
 VAULT secrets enable -path=pki-int pki 2>/dev/null || true
 VAULT secrets tune -max-lease-ttl=43800h pki-int
 
-VAULT write -format=json pki-int/intermediate/generate/internal \
-  common_name="Zero Trust RA Intermediate CA" \
-  issuer_name="zero-trust-ra" \
-  ttl=43800h > "$PKI_DIR/intermediate.json"
+if ! VAULT read pki-int/issuer/zero-trust-ra > /dev/null 2>&1; then
+  VAULT write -format=json pki-int/intermediate/generate/internal \
+    common_name="Zero Trust RA Intermediate CA" \
+    issuer_name="zero-trust-ra" \
+    ttl=43800h > "$PKI_DIR/intermediate.json"
 
-python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate.json'));print(d['data']['csr'])" > "$PKI_DIR/intermediate.csr"
+  python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate.json'));print(d['data']['csr'])" > "$PKI_DIR/intermediate.csr"
 
-VAULT write -format=json pki-root/root/sign-intermediate \
-  csr=- \
-  format=pem_bundle \
-  ttl=43800h < "$PKI_DIR/intermediate.csr" > "$PKI_DIR/intermediate-signed.json"
+  VAULT write -format=json pki-root/root/sign-intermediate \
+    csr=- \
+    format=pem_bundle \
+    ttl=43800h < "$PKI_DIR/intermediate.csr" > "$PKI_DIR/intermediate-signed.json"
 
-python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate-signed.json'));print(d['data']['certificate'])" > "$PKI_DIR/ra-intermediate.crt"
-VAULT write pki-int/intermediate/set-signed certificate=- < "$PKI_DIR/ra-intermediate.crt"
+  python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate-signed.json'));print(d['data']['certificate'])" > "$PKI_DIR/ra-intermediate.crt"
+  VAULT write pki-int/intermediate/set-signed certificate=- < "$PKI_DIR/ra-intermediate.crt"
+  echo "  RA Intermediate CA created"
+else
+  echo "  RA Intermediate CA already exists, fetching existing cert..."
+  VAULT read -field=certificate pki-int/issuer/zero-trust-ra > "$PKI_DIR/ra-intermediate.crt" 2>/dev/null || true
+  echo "  RA Intermediate CA: $PKI_DIR/ra-intermediate.crt (fetched existing)"
+fi
 
 VAULT write pki-int/config/urls \
   issuing_certificates="http://vault:8200/v1/pki-int/ca" \
-  crl_distribution_points="http://vault:8200/v1/pki-int/crl"
+  crl_distribution_points="http://vault:8200/v1/pki-int/crl" 2>/dev/null || true
 echo "  RA Intermediate CA: $PKI_DIR/ra-intermediate.crt"
 
 echo ""
@@ -82,7 +96,7 @@ VAULT write pki-int/roles/server-cert \
   key_type=rsa \
   key_bits=2048 \
   server_flag=true \
-  client_flag=false
+  client_flag=false 2>/dev/null || echo "  Role 'server-cert' already exists, skipping"
 
 VAULT write pki-int/roles/client-cert \
   allow_any_name=true \
@@ -91,7 +105,7 @@ VAULT write pki-int/roles/client-cert \
   key_type=rsa \
   key_bits=2048 \
   server_flag=false \
-  client_flag=true
+  client_flag=true 2>/dev/null || echo "  Role 'client-cert' already exists, skipping"
 
 echo ""
 echo "=== 5. Issue server cert (CN=localhost) ==="
@@ -116,24 +130,59 @@ python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['d
 echo "  Client cert: $PKI_DIR/client.crt"
 
 echo ""
-echo "=== 7. Build chain files ==="
-echo "$(cat "$PKI_DIR/server.crt")" > "$PKI_DIR/server-chain.crt"
-echo "" >> "$PKI_DIR/server-chain.crt"
-echo "$(cat "$PKI_DIR/ra-intermediate.crt")" >> "$PKI_DIR/server-chain.crt"
+echo "=== 7. Extract issuing CA from Vault server response ==="
+python3 -c "
+import json
+d = json.load(open('$PKI_DIR/server.json'))
+issuing_ca = d['data']['issuing_ca']
+ca_chain = d['data']['ca_chain']
+# issuing_ca is the RA cert that actually signed the server cert
+with open('$PKI_DIR/issuing-ca.crt', 'w') as f:
+    f.write(issuing_ca.strip() + '\n')
+# ca_chain[0] is issuing_ca, ca_chain[1] is root CA
+with open('$PKI_DIR/ca-chain.crt', 'w') as f:
+    for cert in ca_chain:
+        f.write(cert.strip() + '\n')
+print('  Issuing CA saved: $PKI_DIR/issuing-ca.crt')
+print('  Full CA chain saved: $PKI_DIR/ca-chain.crt')
+"
 
 echo ""
-echo "=== 8. Deploy to target locations ==="
+echo "=== 8. Build chain files ==="
+echo "$(cat "$PKI_DIR/server.crt")" > "$PKI_DIR/server-chain.crt"
+echo "" >> "$PKI_DIR/server-chain.crt"
+echo "$(cat "$PKI_DIR/issuing-ca.crt")" >> "$PKI_DIR/server-chain.crt"
+
+python3 -c "
+import json
+d = json.load(open('$PKI_DIR/client.json'))
+client_issuing_ca = d['data']['issuing_ca']
+with open('$PKI_DIR/client-issuing-ca.crt', 'w') as f:
+    f.write(client_issuing_ca.strip() + '\n')
+print('  Client issuing CA saved: $PKI_DIR/client-issuing-ca.crt')
+"
+
+echo "$(cat "$PKI_DIR/client.crt")" > "$PKI_DIR/client-chain.crt"
+echo "" >> "$PKI_DIR/client-chain.crt"
+echo "$(cat "$PKI_DIR/client-issuing-ca.crt")" >> "$PKI_DIR/client-chain.crt"
+echo "  Client chain: $PKI_DIR/client-chain.crt"
+
+echo ""
+echo "=== 9. Deploy to target locations ==="
 cp "$PKI_DIR/server-chain.crt" "$ENVOY_TLS_DIR/tls.crt"
-echo "  -> $ENVOY_TLS_DIR/tls.crt  (server + RA chain)"
+echo "  -> $ENVOY_TLS_DIR/tls.crt  (server + issuing CA chain)"
 
 cp "$PKI_DIR/server.key" "$ENVOY_TLS_DIR/tls.key"
 echo "  -> $ENVOY_TLS_DIR/tls.key"
 
-cp "$PKI_DIR/ra-intermediate.crt" "$ENVOY_TRUST_DIR/intermediate-ca.crt"
-echo "  -> $ENVOY_TRUST_DIR/intermediate-ca.crt  (trusted CA for mTLS)"
+cp "$PKI_DIR/ca-chain.crt" "$ENVOY_TRUST_DIR/intermediate-ca.crt"
+echo "  -> $ENVOY_TRUST_DIR/intermediate-ca.crt  (CA chain for mTLS client verification)"
+
+cp "$PKI_DIR/client-chain.crt" "$CERTS_DIR/client-chain.crt"
+echo "  -> $CERTS_DIR/client-chain.crt  (client cert + issuing CA for --cert)"
 
 cp "$PKI_DIR/client.crt" "$CERTS_DIR/client.crt"
-echo "  -> $CERTS_DIR/client.crt"
+echo "  -> $CERTS_DIR/client.crt  (leaf only)"
 
 cp "$PKI_DIR/client.key" "$CERTS_DIR/client.key"
 echo "  -> $CERTS_DIR/client.key"
@@ -144,23 +193,32 @@ echo "  -> $CERTS_DIR/root-ca.crt  (trust anchor)"
 cp "$PKI_DIR/server-chain.crt" "$CERTS_DIR/server-chain.crt"
 echo "  -> $CERTS_DIR/server-chain.crt"
 
-cp "$PKI_DIR/ra-intermediate.crt" "$CERTS_DIR/intermediate-ca.crt"
-echo "  -> $CERTS_DIR/intermediate-ca.crt"
+cp "$PKI_DIR/issuing-ca.crt" "$CERTS_DIR/intermediate-ca.crt"
+echo "  -> $CERTS_DIR/intermediate-ca.crt  (issuing CA for client verification)"
+
+cp "$PKI_DIR/ca-chain.crt" "$CERTS_DIR/ca-chain.crt"
+echo "  -> $CERTS_DIR/ca-chain.crt  (full CA chain for ext_authz trust bundle)"
 
 echo ""
-echo "=== 9. Compute SHA-256 thumbprint for Keycloak ==="
+echo "=== 10. Compute SHA-256 thumbprint for Keycloak ==="
 THUMBPRINT=$(openssl x509 -in "$PKI_DIR/client.crt" -outform DER | sha256sum | cut -d' ' -f1)
+echo "  Thumbprint: $THUMBPRINT"
+
+# Compute a different thumbprint for the mismatch client (all zeros placeholder)
+# The mismatch test verifies that a wrong thumbprint is rejected
+MISMATCH_THUMBPRINT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 echo ""
-echo "============================================================"
-echo " NEW client cert thumbprint (SHA-256):"
-echo "   $THUMBPRINT"
+echo "=== 11. Generate realm-export.json with correct thumbprint ==="
+sed "s/__CLIENT_CERT_THUMBPRINT__/$THUMBPRINT/g; s/__CLIENT_MISMATCH_THUMBPRINT__/$MISMATCH_THUMBPRINT/g" \
+  "$PROJECT_ROOT/infra/keycloak/realm-export.json.template" > "$PROJECT_ROOT/infra/keycloak/realm-export.json"
+echo "  Generated realm-export.json with correct thumbprint"
+
 echo ""
-echo " Update this value in:"
-echo "   project_root/infra/keycloak/realm-export.json"
-echo "   -> demo-client -> protocolMappers -> cnf-thumbprint ->"
-echo "      claim.value -> x5t#S256"
-echo "============================================================"
+echo "=== 12. Update thumbprint in Keycloak via Admin REST API ==="
+python3 "$SCRIPT_DIR/update_keycloak_thumbprint.py" "$THUMBPRINT" && \
+  echo "  Keycloak thumbprint updated successfully (no restart needed)" || \
+  echo "  WARN: Keycloak update failed. Update manually in realm-export.json"
 
 echo ""
 echo "=== Vault PKI generation complete! ==="
-echo "Restart Docker stack and dashboard to apply."

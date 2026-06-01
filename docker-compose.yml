@@ -35,6 +35,9 @@ services:
       REPLAY_BACKEND: "${REPLAY_BACKEND:-memory}"
       REPLAY_REDIS_URL: "${REPLAY_REDIS_URL:-redis://replay-cache:6379/0}"
       REPLAY_REDIS_KEY_PREFIX: "${REPLAY_REDIS_KEY_PREFIX:-zero-trust:replay}"
+      CLIENT_CA_BUNDLE: "/etc/ca-bundle/ca-chain.crt"
+    volumes:
+      - ./project_root/infra/certs/ca-chain.crt:/etc/ca-bundle/ca-chain.crt:ro
     expose:
       - "50051"
     restart: unless-stopped
@@ -91,7 +94,7 @@ services:
     restart: unless-stopped
 
   envoy:
-    image: envoyproxy/envoy:v1.30.10
+    image: envoyproxy/envoy:v1.31-latest
     command:
       - "envoy"
       - "-c"

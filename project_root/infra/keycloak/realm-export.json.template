@@ -48,7 +48,7 @@
           "consentRequired": false,
           "config": {
             "claim.name": "cnf",
-            "claim.value": "{\"x5t#S256\":\"c1b95e7296d05ca68c954dc1caadf8a8148a111bd2fb28b50ad1799c1ee7ec36\"}",
+            "claim.value": "{\"x5t#S256\":\"__CLIENT_CERT_THUMBPRINT__\"}",
             "jsonType.label": "JSON",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -87,7 +87,7 @@
           "consentRequired": false,
           "config": {
             "claim.name": "cnf",
-            "claim.value": "{\"x5t#S256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+            "claim.value": "{\"x5t#S256\":\"__CLIENT_MISMATCH_THUMBPRINT__\"}",
             "jsonType.label": "JSON",
             "id.token.claim": "false",
             "access.token.claim": "true",
