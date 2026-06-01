@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bảng điều khiển Zero-Trust API mTLS</title>
+  <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  .pki-tree {
+    display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%;
+  }
+  .pki-row {
+    display: flex; justify-content: center; gap: 80px; align-items: center; width: 100%;
+  }
+  .pki-row.center { gap: 0; }
+  .pki-arrow-col {
+    display: flex; flex-direction: column; align-items: center; color: #6366f1; font-size: 18px; line-height: 1; margin: 2px 0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #080c18;
+    color: #c8d0dc;
+    min-height: 100vh;
+    overflow-x: hidden;
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%; left: -50%;
+    width: 200%; height: 200%;
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(59,130,246,0.07) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 90%, rgba(139,92,246,0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 50%, rgba(236,72,153,0.03) 0%, transparent 50%);
+    z-index: -1;
+    animation: bgFloat 25s ease-in-out infinite alternate;
+  }
+  @keyframes bgFloat { 0% { transform: translate(0,0) rotate(0deg); } 100% { transform: translate(-3%, -3%) rotate(3deg); } }
+
+  .container { max-width: 1600px; margin: 0 auto; padding: 28px; }
+
+  .text-lg { font-size: 17px; line-height: 1.7; }
+  .text-xl { font-size: 20px; line-height: 1.6; }
+
+  header {
+    background: linear-gradient(135deg, rgba(15,23,42,0.95), rgba(8,12,24,0.98));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(51,65,85,0.4);
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 {
+    font-size: 36px; font-weight: 900; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-size: 200% 200%;
+    animation: gradShift 4s ease-in-out infinite alternate;
+  }
+  @keyframes gradShift { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+  header p { font-size: 18px; color: #94a3b8; margin-top: 4px; letter-spacing: 0.3px; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+
+  .badge {
+    font-size: 13px; font-weight: 700; padding: 4px 14px; border-radius: 20px;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .badge-blue { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.25); }
+
+  /* Status */
+  .status-bar { display: flex; gap: 10px; padding: 16px 0; flex-wrap: wrap; }
+  .status-card {
+    background: rgba(15,23,42,0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(51,65,85,0.3);
+    border-radius: 12px;
+    padding: 16px 22px;
+    flex: 1; min-width: 140px;
+    text-align: center;
+    transition: all 0.3s ease;
+  }
+  .status-card:hover { border-color: rgba(96,165,250,0.2); transform: translateY(-2px); }
+  .status-card .name { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #64748b; font-weight: 600; }
+  .status-card .indicator {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 5px;
+  }
+  .status-card .indicator.ok { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,0.4); animation: pulseGlow 2s infinite; }
+  .status-card .indicator.error { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+  .status-card .indicator.loading { background: #f59e0b; animation: pulse 1s infinite; }
+  @keyframes pulseGlow { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .status-card .status-text { font-size: 15px; font-weight: 600; margin-top: 3px; }
+
+  /* Arch */
+  .arch {
+    background: rgba(15,23,42,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(51,65,85,0.3);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin: 0 0 20px;
+  }
+  .arch h2 { font-size: 17px; color: #94a3b8; margin-bottom: 16px; font-weight: 600; letter-spacing: 0.8px; }
+  .arch-flow { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
+  .arch-box {
+    background: rgba(8,12,24,0.7); border: 1px solid rgba(51,65,85,0.4);
+    border-radius: 10px; padding: 12px 20px; text-align: center;
+    min-width: 100px; transition: all 0.3s;
+  }
+  .arch-box:hover { transform: translateY(-3px); }
+  .arch-box .icon { font-size: 28px; }
+  .arch-box .label { font-size: 14px; color: #94a3b8; margin-top: 4px; font-weight: 500; }
+  .arch-box.highlight { border-color: rgba(96,165,250,0.4); box-shadow: 0 0 16px rgba(59,130,246,0.08); }
+  .arch-box.success { border-color: rgba(34,197,94,0.4); box-shadow: 0 0 16px rgba(34,197,94,0.06); }
+  .arch-box.blocked { border-color: rgba(239,68,68,0.4); }
+  .arch-arrow { color: #475569; font-size: 26px; }
+
+  .legend { display: flex; gap: 16px; margin: 12px 0 0; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 14px; color: #94a3b8; }
+  .legend-item .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Section */
+  .section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 20px 0 14px;
+  }
+  .section-header h2 { font-size: 22px; font-weight: 700; color: #e2e8f0; letter-spacing: 0.3px; }
+  .section-header .count-badge {
+    font-size: 17px; color: #64748b; font-weight: 500;
+    padding: 4px 14px;
+    background: rgba(15,23,42,0.6); border-radius: 20px;
+    border: 1px solid rgba(51,65,85,0.3);
+  }
+  .section-header .count-badge strong { color: #22c55e; }
+
+  /* Grid */
+  .test-grid { display: flex; flex-direction: column; gap: 20px; }
+
+  .test-card {
+    background: rgba(15,23,42,0.5);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(51,65,85,0.35);
+    border-radius: 16px;
+    padding: 28px 32px;
+    transition: all 0.35s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+    overflow: hidden;
+  }
+  .test-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(96,165,250,0.2), transparent);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .test-card:hover::before { opacity: 1; }
+  .test-card:hover { border-color: rgba(96,165,250,0.2); transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
+  .test-card.passed::before { opacity: 1; background: linear-gradient(90deg, transparent, rgba(34,197,94,0.4), transparent); }
+  .test-card.failed::before { opacity: 1; background: linear-gradient(90deg, transparent, rgba(239,68,68,0.4), transparent); }
+
+  .test-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .test-header .icon-big { font-size: 36px; }
+  .test-header h3 { font-size: 24px; font-weight: 700; }
+  .test-header .tag {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;
+  }
+  .tag-legit { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+  .tag-attack { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+
+  .test-card .desc { font-size: 15px; color: #8892a4; margin-bottom: 12px; line-height: 1.7; }
+
+  /* DETAILED FLOW */
+  .flow-detail {
+    display: flex; align-items: stretch; gap: 0;
+    margin: 12px 0; flex-wrap: wrap;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(51,65,85,0.25);
+    background: rgba(8,12,24,0.4);
+  }
+  .flow-step {
+    flex: 1; min-width: 90px;
+    padding: 12px 10px;
+    text-align: center;
+    background: rgba(8,12,24,0.3);
+    border-right: 1px solid rgba(51,65,85,0.15);
+    transition: all 0.5s cubic-bezier(0.4,0,0.2,1);
+    position: relative;
+  }
+  .flow-step:last-child { border-right: none; }
+  .flow-step .f-icon { font-size: 26px; transition: transform 0.3s; display: block; }
+  .flow-step .f-label { font-size: 12px; color: #64748b; margin-top: 4px; font-weight: 600; letter-spacing: 0.2px; }
+  .flow-step .f-sub {
+    font-size: 10px; color: #475569; margin-top: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.3;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .flow-step .f-result {
+    display: none;
+    margin-top: 6px;
+    font-size: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 3px 6px;
+    border-radius: 4px;
+    text-align: left;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .flow-step .f-result.show { display: block; animation: fadeInStep 0.4s ease; }
+  @keyframes fadeInStep { 0% { opacity: 0; transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+
+  .flow-step.pass {
+    background: rgba(5,46,22,0.5);
+    box-shadow: inset 0 0 24px rgba(34,197,94,0.06);
+  }
+  .flow-step.pass .f-result { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.2); }
+  .flow-step.pass .f-icon { }
+  .flow-step.pass .f-label { color: #86efac; }
+
+  .flow-step.fail {
+    background: rgba(45,10,10,0.5);
+    box-shadow: inset 0 0 24px rgba(239,68,68,0.06);
+    animation: stepShake 0.5s ease;
+  }
+  .flow-step.fail .f-result { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+  .flow-step.fail .f-icon { animation: shake 0.5s ease; }
+  .flow-step.fail .f-label { color: #fca5a5; }
+
+  .flow-step.skip {
+    background: rgba(30,41,59,0.3);
+  }
+  .flow-step.skip .f-label { color: #475569; }
+  .flow-step.skip .f-icon { opacity: 0.4; }
+
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+  @keyframes stepShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-1px); } 75% { transform: translateX(1px); } }
+
+  .flow-arrow-row {
+    display: none;
+    justify-content: center; gap: 0;
+    font-size: 13px; color: #475569;
+    margin: 2px 0 0;
+    padding: 2px 0;
+  }
+  .flow-arrow-row .arr-step { flex: 1; min-width: 80px; text-align: center; }
+  .flow-arrow-row .arr-step.pass-arr { color: #22c55e; }
+  .flow-arrow-row .arr-step.fail-arr { color: #ef4444; }
+
+  .explanation {
+    font-size: 15px; color: #b4bccb; margin: 14px 0;
+    padding: 18px 22px;
+    background: rgba(8,12,24,0.4);
+    border-radius: 10px;
+    border-left: 3px solid rgba(99,102,241,0.3);
+    line-height: 1.8;
+  }
+  .explanation strong { color: #e2e8f0; font-weight: 600; }
+  .explanation code {
+    background: rgba(30,41,59,0.7); padding: 1px 5px;
+    border-radius: 3px; font-size: 15px; color: #f472b6;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .test-card .expect {
+    font-size: 16px; color: #94a3b8;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    background: rgba(8,12,24,0.3);
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  .btn-row { display: flex; gap: 12px; }
+  .test-card button {
+    flex: 1; padding: 14px;
+    border: none; border-radius: 10px;
+    font-weight: 700; font-size: 16px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+    position: relative; overflow: hidden;
+    letter-spacing: 0.3px;
+  }
+  .test-card button::after {
+    content: '';
+    position: absolute; top: 50%; left: 50%;
+    width: 0; height: 0;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+    transform: translate(-50%,-50%);
+    transition: width 0.6s, height 0.6s;
+  }
+  .test-card button:active::after { width: 300px; height: 300px; }
+  .btn-run { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; box-shadow: 0 4px 14px rgba(37,99,235,0.2); }
+  .btn-run:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37,99,235,0.3); }
+  .btn-run:disabled { background: rgba(51,65,85,0.5); color: #64748b; cursor: not-allowed; box-shadow: none; transform: none; }
+  .btn-attack { background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; box-shadow: 0 4px 14px rgba(220,38,38,0.2); }
+  .btn-attack:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(220,38,38,0.3); }
+  .btn-attack:disabled { background: rgba(51,65,85,0.5); color: #64748b; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  .result {
+    margin-top: 12px; padding: 16px;
+    border-radius: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    display: none;
+    animation: slideIn 0.3s cubic-bezier(0.4,0,0.2,1);
+  }
+  .result.show { display: block; }
+  @keyframes slideIn { 0% { opacity: 0; transform: translateY(-6px) scale(0.98); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+  .result.pass { background: rgba(5,46,22,0.5); border: 1px solid rgba(34,197,94,0.25); color: #86efac; }
+  .result.fail { background: rgba(45,10,10,0.5); border: 1px solid rgba(239,68,68,0.25); color: #fca5a5; }
+  .result.info { background: rgba(12,25,41,0.5); border: 1px solid rgba(59,130,246,0.15); color: #93c5fd; }
+  .result .label { font-weight: 700; margin-bottom: 6px; font-size: 17px; }
+  .result pre { white-space: pre-wrap; word-break: break-all; margin-top: 8px; font-size: 13px; max-height: none; overflow-y: visible; }
+  .status-code { display: inline-block; padding: 4px 14px; border-radius: 6px; font-weight: 800; font-size: 26px; }
+  .status-code.ok { color: #22c55e; text-shadow: 0 0 16px rgba(34,197,94,0.2); }
+  .status-code.deny { color: #ef4444; text-shadow: 0 0 16px rgba(239,68,68,0.2); }
+  .status-code.err { color: #f59e0b; }
+
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2.5px solid rgba(255,255,255,0.12);
+    border-top-color: #60a5fa;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin-right: 8px; vertical-align: middle;
+  }
+  .btn-attack .spinner { border-top-color: #fca5a5; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .btn-secondary {
+    background: rgba(51,65,85,0.4); color: #e2e8f0;
+    padding: 7px 16px; border: 1px solid rgba(71,85,105,0.4);
+    border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; padding: 9px 18px;
+    transition: all 0.25s; backdrop-filter: blur(8px);
+  }
+  .btn-secondary:hover { background: rgba(71,85,105,0.5); border-color: rgba(96,165,250,0.3); transform: translateY(-1px); }
+
+  .all-result { margin-top: 16px; padding: 24px; border-radius: 14px; text-align: center; font-size: 22px; font-weight: 700; animation: slideIn 0.4s ease; display: none; }
+  .all-result.show { display: block; }
+  .all-result.pass-all { background: rgba(5,46,22,0.5); border: 1px solid rgba(34,197,94,0.25); color: #86efac; box-shadow: 0 0 30px rgba(34,197,94,0.05); }
+  .all-result.fail-some { background: rgba(45,10,10,0.5); border: 1px solid rgba(239,68,68,0.25); color: #fca5a5; }
+  .all-result .sub { font-size: 17px; font-weight: 400; margin-top: 6px; opacity: 0.7; }
+
+  .footer { text-align: center; padding: 28px; color: #475569; font-size: 15px; border-top: 1px solid rgba(51,65,85,0.2); margin-top: 28px; }
+
+  .confetti-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; overflow: hidden; }
+  .confetti { position: absolute; border-radius: 2px; animation: confettiFall linear forwards; }
+  @keyframes confettiFall { 0% { transform: translateY(-10px) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+
+  @media (max-width: 640px) {
+    .container { padding: 12px; }
+    .test-card { padding: 16px; }
+    .flow-step { min-width: 60px; padding: 8px 4px; }
+    .flow-step .f-sub { display: none; }
+    header h1 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <h1>Zero-Trust API Gateway</h1>
+      </div>
+      <p>mTLS + Token Binding + Proof-of-Possession</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" onclick="runAllTests()" id="btnRunAll">▶ Chạy tất cả</button>
+      <button class="btn-secondary" onclick="resetAll()" id="btnReset">↻ Đặt lại</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- Status -->
+  <div class="status-bar" id="statusBar">
+    <div class="status-card"><div class="name">🆔 Keycloak</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
+    <div class="status-card"><div class="name">🔒 Envoy</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
+    <div class="status-card"><div class="name">🔑 ext_authz</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
+    <div class="status-card"><div class="name">⚙️ Backend</div><div class="status-text"><span class="indicator loading"></span> Đang kiểm tra...</div></div>
+  </div>
+
+
+  <!-- PKI Hierarchy -->
+  <div class="arch">
+    <h2>🏛 Hệ thống phân cấp PKI</h2>
+    <div class="pki-tree">
+      <div class="pki-row center">
+        <div class="arch-box"><div class="icon">🛡️</div><div class="label">Root CA</div><div style="font-size:9px;color:#64748b;margin-top:2px;">Tự ký · Offline</div></div>
+      </div>
+      <div class="pki-row center">
+        <div class="pki-arrow-col">⬇ Ký</div>
+      </div>
+      <div class="pki-row center">
+        <div class="arch-box highlight"><div class="icon">🏢</div><div class="label">RA Intermediate CA</div><div style="font-size:9px;color:#64748b;margin-top:2px;">Cấp cert hàng ngày</div></div>
+      </div>
+      <div class="pki-row">
+        <div class="pki-arrow-col">⬇ Ký</div>
+        <div class="pki-arrow-col">⬇ Ký</div>
+      </div>
+      <div class="pki-row">
+        <div class="arch-box"><div class="icon">📜</div><div class="label">Server Cert</div><div style="font-size:9px;color:#64748b;margin-top:2px;">CN=localhost</div></div>
+        <div class="arch-box"><div class="icon">🪪</div><div class="label">Client Cert</div><div style="font-size:9px;color:#64748b;margin-top:2px;">CN=demo-client</div></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="legend-item"><span class="dot" style="background:#6366f1;box-shadow:0 0 6px rgba(99,102,241,0.3);"></span> Root CA ký RA</span>
+      <span class="legend-item"><span class="dot" style="background:#a78bfa;box-shadow:0 0 6px rgba(167,139,250,0.3);"></span> RA ký leaf certs</span>
+      <span class="legend-item"><span class="dot" style="background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,0.3);"></span> Trusted for mTLS</span>
+    </div>
+  </div>
+
+  <!-- Grid -->
+  <div class="section-header">
+    <h2>🧪 Kịch bản kiểm tra bảo mật</h2>
+    <div class="count-badge">✅ <strong id="passCount">0</strong> / <span id="totalCount">6</span></div>
+  </div>
+
+  <div class="test-grid" id="testGrid">
+
+    <!-- ==================== TEST 1: SUCCESS ==================== -->
+    <div class="test-card" data-test="success">
+      <div class="test-header">
+        <span class="icon-big">✅</span>
+        <h3>mTLS hợp lệ + Token (Luồng chuẩn)</h3>
+        <span class="tag tag-legit">Hợp lệ</span>
+      </div>
+      <div class="desc">Xác nhận toàn bộ chuỗi bảo mật zero-trust hoạt động đúng: client hợp lệ với chứng chỉ <strong>RA Intermediate CA</strong> cấp và JWT token có ràng buộc PoP vượt qua tất cả lớp kiểm tra.</div>
+
+      <div class="flow-detail" id="flow-success">
+        <div class="flow-step" data-step="mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">Bắt tay mTLS</span>
+          <span class="f-sub">Client → Envoy</span>
+          <div class="f-result" id="log-success-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">Envoy → ext_authz</span>
+          <div class="f-result" id="log-success-forward"></div>
+        </div>
+        <div class="flow-step" data-step="jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">Xác minh JWT</span>
+          <span class="f-sub">JWKS · chữ ký · hết hạn · nhà phát hành</span>
+          <div class="f-result" id="log-success-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="binding">
+          <span class="f-icon">🔗</span>
+          <span class="f-label">Ràng buộc chứng chỉ</span>
+          <span class="f-sub">Kiểm tra cnf.x5t#S256</span>
+          <div class="f-result" id="log-success-binding"></div>
+        </div>
+        <div class="flow-step" data-step="replay">
+          <span class="f-icon">💾</span>
+          <span class="f-label">Bộ nhớ đệm Replay</span>
+          <span class="f-sub">jti · TTL 10 phút</span>
+          <div class="f-result" id="log-success-replay"></div>
+        </div>
+        <div class="flow-step" data-step="backend">
+          <span class="f-icon">⚙️</span>
+          <span class="f-label">Backend</span>
+          <span class="f-sub">API được bảo vệ</span>
+          <div class="f-result" id="log-success-backend"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục đích:</strong> Xác nhận luồng truy cập hợp lệ — client có đủ cả 2 yếu tố (chứng chỉ + token) truy cập thành công API được bảo vệ.<br><br>
+
+        <strong>Phân tích luồng xử lý (6 bước):</strong><br>
+        <strong>① Bắt tay mTLS</strong> — Client gửi <code>client.crt</code> (do <strong>RA Intermediate CA</strong> ký, chuỗi tin cậy lên <strong>Root CA offline</strong>). Envoy xác thực chứng chỉ qua <code>trust/intermediate-ca.crt</code>, yêu cầu client cert bắt buộc (<code>require_client_certificate: true</code>). <strong style="color:#22c55e;">✓ Xác thực thành công</strong><br><br>
+
+        <strong>② Chuyển tiếp tới ext_authz</strong> — Envoy đính kèm metadata chứng chỉ client vào header <code>X-Forwarded-Client-Cert</code> (XFCC) và gửi request (gồm Authorization header) tới dịch vụ <code>ext_authz</code> qua gRPC để đánh giá chính sách.<br><br>
+
+        <strong>③ Xác minh JWT</strong> — ext_authz lấy JWKS từ Keycloak (<code>/realms/zero-trust/protocol/openid-connect/certs</code>), xác minh:<br>
+        &nbsp;&nbsp;• Chữ ký số RSA-SHA256 của token<br>
+        &nbsp;&nbsp;• Thời hạn (<code>exp</code>): token chưa hết hạn<br>
+        &nbsp;&nbsp;• Nhà phát hành (<code>iss</code>): khớp với issuer đã cấu hình<br>
+        &nbsp;&nbsp;• Đối tượng (<code>aud</code>): <code>api-gateway</code><br>
+        <strong style="color:#22c55e;">✓ Token hợp lệ</strong><br><br>
+
+        <strong>④ Ràng buộc chứng chỉ (Proof-of-Possession)</strong> — ext_authz trích xuất claim <code>cnf.x5t#S256</code> từ JWT (chứa SHA-256 thumbprint của <code>client.crt</code> được hardcode trong Keycloak protocol mapper), tính SHA-256 của chứng chỉ thực tế từ XFCC header, so sánh 2 giá trị. <strong style="color:#22c55e;">✓ Khớp → token thuộc về client này</strong><br><br>
+
+        <strong>⑤ Chống tấn công Replay</strong> — ext_authz kiểm tra <code>jti</code> (JWT ID) trong bộ nhớ đệm (Redis). Nếu chưa tồn tại → lưu với TTL 10 phút. <strong style="color:#22c55e;">✓ jti mới → cho phép</strong><br><br>
+
+        <strong>⑥ Chuyển tiếp tới Backend</strong> — Envoy nhận kết quả <code>allowed</code> từ ext_authz, gắn header (<code>x-auth-user</code>, <code>x-authz-result: allow</code>), chuyển tiếp request tới Protected API → <strong style="color:#22c55e;">200 OK</strong><br><br>
+
+        <strong>Nguyên lý bảo mật:</strong> Mô hình <strong>phòng thủ theo chiều sâu (Defense-in-Depth)</strong> với 3 lớp: (1) mTLS — xác thực thiết bị, (2) JWT — xác thực danh tính, (3) PoP + Replay — chống đánh cắp và phát lại. Tất cả lớp phải vượt qua mới cho phép truy cập.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#22c55e;font-size:20px;">HTTP 200 OK</strong></div>
+      <button class="btn-run" onclick="runTest('success', this)">✅ Chạy kiểm tra</button>
+      <div class="result" id="result-success"></div>
+    </div>
+
+    <!-- ==================== TEST 2: NO TOKEN ==================== -->
+    <div class="test-card" data-test="no-token">
+      <div class="test-header">
+        <span class="icon-big">🔴</span>
+        <h3>Thiếu Bearer Token</h3>
+        <span class="tag tag-attack">Vector tấn công</span>
+      </div>
+      <div class="desc">Mô phỏng kịch bản client có chứng chỉ mTLS hợp lệ nhưng <strong>cố tình không gửi token</strong> (Authorization header). Lớp TLS vượt qua nhưng lớp ủy quyền JWT từ chối — minh họa nguyên tắc <strong>phòng thủ đa lớp</strong>.</div>
+
+      <div class="flow-detail" id="flow-no-token">
+        <div class="flow-step" data-step="mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">Bắt tay mTLS</span>
+          <span class="f-sub">Client → Envoy</span>
+          <div class="f-result" id="log-no-token-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">Envoy → ext_authz</span>
+          <div class="f-result" id="log-no-token-forward"></div>
+        </div>
+        <div class="flow-step" data-step="jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">Kiểm tra JWT</span>
+          <span class="f-sub">Kiểm tra header tồn tại</span>
+          <div class="f-result" id="log-no-token-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="block">
+          <span class="f-icon">🚫</span>
+          <span class="f-label">Bị chặn</span>
+          <span class="f-sub">401 Unauthorized</span>
+          <div class="f-result" id="log-no-token-block"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục tiêu:</strong> Kiểm tra lớp bảo vệ thứ 2 (JWT) — chứng minh rằng mTLS đơn thuần không đủ để truy cập API. Token là yếu tố bắt buộc.<br><br>
+
+        <strong>Phân tích luồng xử lý (4 bước):</strong><br>
+        <strong>① Bắt tay mTLS</strong> — Client gửi chứng chỉ hợp lệ (do <strong>RA Intermediate CA</strong> ký, chuỗi lên <strong>Root CA</strong>). Envoy xác thực thành công. <strong style="color:#22c55e;">✓ mTLS qua</strong> (lớp 1: mTLS không phát hiện bất thường)<br><br>
+
+        <strong>② Chuyển tiếp tới ext_authz</strong> — Envoy gửi metadata request kèm chứng chỉ client tới ext_authz. Request <strong>không có header <code>Authorization</code></strong>.<br><br>
+
+        <strong>③ Kiểm tra sự tồn tại của JWT</strong> — ext_authz kiểm tra header <code>Authorization: Bearer &lt;token&gt;</code>. <strong style="color:#ef4444;">❌ Không tìm thấy token!</strong> ext_authz dừng xử lý ngay tại bước này, không tiến hành xác minh chữ ký, ràng buộc chứng chỉ, hay chống replay.<br><br>
+
+        <strong>④ Chặn request</strong> — ext_authz trả về <code>HTTP 401 Unauthorized</code>. Envoy hủy request ngay lập tức. Backend <strong>không bao giờ nhận được</strong> request này.<br><br>
+
+        <strong>Nguyên lý bảo mật:</strong> Đây là minh họa cho <strong>phòng thủ theo chiều sâu (Defense-in-Depth)</strong>:
+        <br>&nbsp;&nbsp;• Lớp 1 — mTLS: xác thực thiết bị (chứng chỉ) → <strong style="color:#22c55e;">✓ qua</strong>
+        <br>&nbsp;&nbsp;• Lớp 2 — JWT: xác thực danh tính (token) → <strong style="color:#ef4444;">✗ chặn</strong>
+        <br>Dù có chứng chỉ hợp lệ, request vẫn bị từ chối vì thiếu token. Hai yếu tố độc lập bắt buộc phải có.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#ef4444;font-size:20px;">HTTP 401 Unauthorized</strong></div>
+      <button class="btn-run" onclick="runTest('no-token', this)">🔴 Chạy kiểm tra</button>
+      <div class="result" id="result-no-token"></div>
+    </div>
+
+    <!-- ==================== TEST 3: INVALID TOKEN ==================== -->
+    <div class="test-card" data-test="invalid-token">
+      <div class="test-header">
+        <span class="icon-big">🔴</span>
+        <h3>JWT Token giả mạo / Sai chữ ký</h3>
+        <span class="tag tag-attack">Vector tấn công</span>
+      </div>
+      <div class="desc">Mô phỏng kịch bản kẻ tấn công có chứng chỉ mTLS hợp lệ nhưng sử dụng <strong>JWT tự tạo hoặc giả mạo</strong> (không được Keycloak ký). Token bị từ chối tại bước xác minh chữ ký số.</div>
+
+      <div class="flow-detail" id="flow-invalid-token">
+        <div class="flow-step" data-step="mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">Bắt tay mTLS</span>
+          <span class="f-sub">Client → Envoy</span>
+          <div class="f-result" id="log-invalid-token-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">Envoy → ext_authz</span>
+          <div class="f-result" id="log-invalid-token-forward"></div>
+        </div>
+        <div class="flow-step" data-step="jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">Xác minh JWT</span>
+          <span class="f-sub">Chữ ký · phân tích</span>
+          <div class="f-result" id="log-invalid-token-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="block">
+          <span class="f-icon">🚫</span>
+          <span class="f-label">Bị chặn</span>
+          <span class="f-sub">401 Unauthorized</span>
+          <div class="f-result" id="log-invalid-token-block"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục tiêu:</strong> Kiểm tra cơ chế xác minh chữ ký JWT — chứng minh rằng token tự tạo không qua được bước xác thực mật mã.<br><br>
+
+        <strong>Phân tích luồng xử lý (4 bước):</strong><br>
+        <strong>① Bắt tay mTLS</strong> — Chứng chỉ client hợp lệ (do <strong>RA Intermediate CA</strong> ký). Envoy xác thực thành công. <strong style="color:#22c55e;">✓ mTLS qua</strong><br><br>
+
+        <strong>② Chuyển tiếp tới ext_authz</strong> — Envoy gửi header yêu cầu (gồm <code>Authorization: Bearer &lt;jwt_giả_mạo&gt;</code>) tới ext_authz.<br><br>
+
+        <strong>③ Xác minh JWT</strong> — ext_authz phân tích JWT và xác minh chữ ký số với JWKS endpoint của Keycloak. Ba dạng tấn công thường gặp:<br>
+        &nbsp;&nbsp;• <strong>Token sai định dạng:</strong> Không thể giải mã base64url header/payload → từ chối ngay<br>
+        &nbsp;&nbsp;• <strong>Chữ ký không hợp lệ:</strong> Token giải mã được nhưng chữ ký RSA-SHA256 không khớp với JWKS → từ chối<br>
+        &nbsp;&nbsp;• <strong>Tấn công "alg: none":</strong> Token có <code>alg: none</code> bị thư viện JWT từ chối (unsigned token)<br>
+        <strong style="color:#ef4444;">❌ Xác minh chữ ký thất bại!</strong> ext_authz không tiến hành các bước tiếp theo (ràng buộc chứng chỉ, chống replay).<br><br>
+
+        <strong>④ Chặn request</strong> — ext_authz trả về <strong style="color:#ef4444;">HTTP 401 Unauthorized</strong>. Token giả mạo không bao giờ tới được backend.<br><br>
+
+        <strong>Nguyên lý bảo mật:</strong> Xác minh chữ ký số JWT dựa trên hạ tầng <strong>Public Key Infrastructure (PKI)</strong> của Keycloak:
+        <br>&nbsp;&nbsp;• Keycloak ký token bằng <strong>khóa riêng (private key)</strong> — chỉ Keycloak mới có
+        <br>&nbsp;&nbsp;• ext_authz xác minh bằng <strong>khóa công khai (public key)</strong> từ JWKS — ai cũng có thể lấy
+        <br>&nbsp;&nbsp;• Token không có chữ ký hợp lệ → <strong>hoàn toàn vô dụng</strong> với hệ thống
+        <br>Đây là cơ sở của <strong>mô hình tin cậy phi tập trung</strong>: không cần gọi Keycloak mỗi lần, chỉ cần JWKS cached.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#ef4444;font-size:15px;">HTTP 401 Unauthorized</strong></div>
+      <button class="btn-run" onclick="runTest('invalid-token', this)">🔴 Chạy kiểm tra</button>
+      <div class="result" id="result-invalid-token"></div>
+    </div>
+
+    <!-- ==================== TEST 4: WRONG CERT BINDING ==================== -->
+    <div class="test-card" data-test="wrong-cert-binding">
+      <div class="test-header">
+        <span class="icon-big">🔴</span>
+        <h3>Tái sử dụng Token bị đánh cắp (Sai chứng chỉ)</h3>
+        <span class="tag tag-attack">Vector tấn công</span>
+      </div>
+      <div class="desc">Mô phỏng kịch bản kẻ tấn công <strong>đánh cắp JWT</strong> hợp lệ (qua MITM, rò rỉ log, XSS) và cố gắng dùng nó với <strong>chứng chỉ client của riêng chúng</strong>. Đây là tấn công điển hình vào <strong>Proof-of-Possession (PoP)</strong>.</div>
+
+      <div class="flow-detail" id="flow-wrong-cert-binding">
+        <div class="flow-step" data-step="mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">Bắt tay mTLS</span>
+          <span class="f-sub">Chứng chỉ tấn công</span>
+          <div class="f-result" id="log-wrong-cert-binding-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">Envoy → ext_authz</span>
+          <div class="f-result" id="log-wrong-cert-binding-forward"></div>
+        </div>
+        <div class="flow-step" data-step="jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">Xác minh JWT</span>
+          <span class="f-sub">Chữ ký OK ✓</span>
+          <div class="f-result" id="log-wrong-cert-binding-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="binding">
+          <span class="f-icon">🔗</span>
+          <span class="f-label">Ràng buộc chứng chỉ</span>
+          <span class="f-sub">cnf.x5t#S256</span>
+          <div class="f-result" id="log-wrong-cert-binding-binding"></div>
+        </div>
+        <div class="flow-step" data-step="block">
+          <span class="f-icon">🚫</span>
+          <span class="f-label">Bị chặn</span>
+          <span class="f-sub">403 Forbidden</span>
+          <div class="f-result" id="log-wrong-cert-binding-block"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục tiêu:</strong> Kiểm tra cơ chế <strong>Proof-of-Possession (PoP)</strong> thông qua ràng buộc chứng chỉ (RFC 8705) — đây là cốt lõi của hệ thống, ngăn chặn tấn công tái sử dụng token bị đánh cắp.<br><br>
+
+        <strong>Kịch bản tấn công:</strong><br>
+        Kẻ tấn công chặn được JWT hợp lệ của nạn nhân (Client A) — có thể qua nghe lén mạng, proxy bị xâm phạm, log inspection, hoặc XSS. Kẻ tấn công sử dụng token này với chứng chỉ của chính mình (Client B) để truy cập API. Nếu hệ thống chỉ kiểm tra mTLS + JWT độc lập, token vẫn hợp lệ → tấn công thành công. Nhưng nhờ <strong>PoP</strong>, token bị ràng buộc với chứng chỉ của Client A ngay từ khi cấp → không khớp với chứng chỉ B → chặn.<br><br>
+
+        <strong>Phân tích luồng xử lý (5 bước):</strong><br>
+        <strong>① Bắt tay mTLS</strong> — Kẻ tấn công gửi <strong>chứng chỉ của riêng chúng</strong> (cũng do <strong>RA Intermediate CA</strong> ký, hợp lệ về mặt PKI). Envoy xác thực chuỗi lên <strong>Root CA</strong> và chấp nhận. <strong style="color:#22c55e;">✓ mTLS qua</strong> (chứng chỉ hợp lệ, chỉ là khác client)<br><br>
+
+        <strong>② Chuyển tiếp</strong> — Envoy gửi metadata (chứng chỉ kẻ tấn công + JWT bị đánh cắp) tới ext_authz.<br><br>
+
+        <strong>③ Xác minh JWT</strong> — ext_authz xác minh chữ ký JWT với JWKS. Token hợp lệ, chưa hết hạn. <strong style="color:#22c55e;">✓ Chữ ký OK</strong><br><br>
+
+        <strong>④ Kiểm tra ràng buộc chứng chỉ (PoP)</strong> — <strong style="color:#f59e0b;">⚡ Bước quyết định:</strong> ext_authz so sánh 2 giá trị:<br>
+        &nbsp;&nbsp;1. <strong>cnf.x5t#S256</strong> trong JWT = SHA-256 thumbprint của <strong>chứng chỉ Client A</strong> (nạn nhân) — được hardcode trong Keycloak protocol mapper<br>
+        &nbsp;&nbsp;2. <strong>SHA-256(cert)</strong> tính từ chứng chỉ thực tế trong XFCC header = thumbprint của <strong>chứng chỉ Client B</strong> (kẻ tấn công)<br>
+        &nbsp;&nbsp;<strong style="color:#ef4444;">❌ KHÔNG KHỚP! → Token không thuộc về client này</strong><br><br>
+
+        <strong>⑤ Chặn tấn công</strong> — ext_authz trả về <strong style="color:#ef4444;">HTTP 403 Forbidden</strong> với message: <em>"token is not bound to presented client certificate"</em>. Backend an toàn.<br><br>
+
+        <strong>Nguyên lý bảo mật — Proof-of-Possession (PoP):</strong><br>
+        Trong mô hình bảo mật truyền thống (JWT đơn thuần), token bị đánh cắp có thể dùng lại ngay lập tức. PoP giải quyết vấn đề này bằng cách <strong>bind token với client certificate tại thời điểm cấp</strong>:<br>
+        &nbsp;&nbsp;• Keycloak gắn claim <code>cnf.x5t#S256</code> vào JWT — chứa SHA-256 thumbprint của client certificate hợp lệ<br>
+        &nbsp;&nbsp;• ext_authz kiểm tra: thumbprint trong JWT <strong>===</strong> thumbprint certificate thực tế?<br>
+        &nbsp;&nbsp;• Nếu không khớp → token bị đánh cắp → <strong>deny access</strong><br>
+        <strong>Kết luận:</strong> JWT bị đánh cắp trở nên <strong>vô dụng</strong> nếu không có chính xác client certificate gốc. Đây là điểm khác biệt cốt lõi giữa zero-trust và bảo mật truyền thống.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#ef4444;font-size:20px;">HTTP 403 Forbidden</strong></div>
+      <button class="btn-attack" onclick="runTest('wrong-cert-binding', this)">🔴 Mô phỏng tấn công</button>
+      <div class="result" id="result-wrong-cert-binding"></div>
+    </div>
+
+    <!-- ==================== TEST 5: REPLAY ==================== -->
+    <div class="test-card" data-test="replay">
+      <div class="test-header">
+        <span class="icon-big">🔴</span>
+        <h3>Tấn công Replay (Phát lại JWT)</h3>
+        <span class="tag tag-attack">Vector tấn công</span>
+      </div>
+      <div class="desc">Mô phỏng kịch bản kẻ tấn công chặn được một request hợp lệ và <strong>phát lại chính xác JWT đó</strong> lần thứ hai. Lần đầu (hợp lệ) thành công — lần hai (replay) bị chặn bởi bộ nhớ đệm JWT ID (<code>jti</code>).</div>
+
+      <div style="margin-bottom:8px;padding:6px 10px;background:rgba(8,12,24,0.3);border-radius:8px;border-left:3px solid #22c55e;">
+        <div style="font-size:14px;font-weight:600;color:#22c55e;">▶ Yêu cầu thứ 1 — Bình thường</div>
+      </div>
+      <div class="flow-detail" id="flow-replay-1" style="margin-bottom:8px;">
+        <div class="flow-step" data-step="1-mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">mTLS</span>
+          <span class="f-sub">Bắt tay</span>
+          <div class="f-result" id="log-replay-1-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="1-forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">→ ext_authz</span>
+          <div class="f-result" id="log-replay-1-forward"></div>
+        </div>
+        <div class="flow-step" data-step="1-jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">JWT</span>
+          <span class="f-sub">Xác minh</span>
+          <div class="f-result" id="log-replay-1-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="1-bind">
+          <span class="f-icon">🔗</span>
+          <span class="f-label">Ràng buộc</span>
+          <span class="f-sub">Kiểm tra chứng chỉ</span>
+          <div class="f-result" id="log-replay-1-bind"></div>
+        </div>
+        <div class="flow-step" data-step="1-cache">
+          <span class="f-icon">💾</span>
+          <span class="f-label">Lưu jti</span>
+          <span class="f-sub">Lưu trữ · TTL</span>
+          <div class="f-result" id="log-replay-1-cache"></div>
+        </div>
+        <div class="flow-step" data-step="1-backend">
+          <span class="f-icon">⚙️</span>
+          <span class="f-label">Backend</span>
+          <span class="f-sub">200 OK</span>
+          <div class="f-result" id="log-replay-1-backend"></div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:8px;padding:6px 10px;background:rgba(8,12,24,0.3);border-radius:8px;border-left:3px solid #ef4444;">
+        <div style="font-size:14px;font-weight:600;color:#ef4444;">▶ Yêu cầu thứ 2 — Tấn công Replay</div>
+      </div>
+      <div class="flow-detail" id="flow-replay-2" style="margin-bottom:4px;">
+        <div class="flow-step" data-step="2-mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">mTLS</span>
+          <span class="f-sub">Bắt tay</span>
+          <div class="f-result" id="log-replay-2-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="2-forward">
+          <span class="f-icon">📤</span>
+          <span class="f-label">Chuyển tiếp</span>
+          <span class="f-sub">→ ext_authz</span>
+          <div class="f-result" id="log-replay-2-forward"></div>
+        </div>
+        <div class="flow-step" data-step="2-jwt">
+          <span class="f-icon">🪪</span>
+          <span class="f-label">JWT</span>
+          <span class="f-sub">Xác minh</span>
+          <div class="f-result" id="log-replay-2-jwt"></div>
+        </div>
+        <div class="flow-step" data-step="2-bind">
+          <span class="f-icon">🔗</span>
+          <span class="f-label">Ràng buộc</span>
+          <span class="f-sub">Kiểm tra chứng chỉ</span>
+          <div class="f-result" id="log-replay-2-bind"></div>
+        </div>
+        <div class="flow-step" data-step="2-cache">
+          <span class="f-icon">💾</span>
+          <span class="f-label">Kiểm tra jti</span>
+          <span class="f-sub">Đã tồn tại!</span>
+          <div class="f-result" id="log-replay-2-cache"></div>
+        </div>
+        <div class="flow-step" data-step="block">
+          <span class="f-icon">🚫</span>
+          <span class="f-label">Bị chặn</span>
+          <span class="f-sub">403 Forbidden</span>
+          <div class="f-result" id="log-replay-block"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục tiêu:</strong> Kiểm tra cơ chế <strong>chống tấn công Replay</strong> thông qua JWT ID (<code>jti</code>). Ngay cả khi token hợp lệ và ràng buộc đúng, mỗi JWT chỉ được dùng đúng <strong>một lần duy nhất</strong>.<br><br>
+
+        <strong>Kịch bản tấn công:</strong><br>
+        Kẻ tấn công chặn được request HTTPS hợp lệ (qua proxy bị xâm phạm, TLS termination, hoặc logging system) và thu được JWT đầy đủ. Dù đã qua mTLS + JWT + PoP, kẻ tấn công vẫn có thể phát lại token nếu không có cơ chế chống replay. Hệ thống dùng <strong>jti cache</strong> để ngăn chặn điều này.<br><br>
+
+        <strong>Phân tích luồng — Yêu cầu thứ 1 (Hợp lệ):</strong><br>
+        &nbsp;<strong>① mTLS</strong> <span style="color:#22c55e;">✓</span> → <strong>② Chuyển tiếp</strong> <span style="color:#22c55e;">✓</span> → <strong>③ JWT</strong> <span style="color:#22c55e;">✓</span> → <strong>④ Ràng buộc</strong> <span style="color:#22c55e;">✓</span> → <strong>⑤ Cache jti</strong>: ext_authz kiểm tra <code>jti</code> chưa tồn tại → <strong style="color:#22c55e;">lưu vào bộ nhớ đệm (Redis, TTL: 10 phút)</strong> → <strong>⑥ Backend</strong> <span style="color:#22c55e;">200 OK</span><br><br>
+
+        <strong>Phân tích luồng — Yêu cầu thứ 2 (Tấn công Replay):</strong><br>
+        &nbsp;<strong>① mTLS</strong> <span style="color:#22c55e;">✓</span> (chứng chỉ hợp lệ) → <strong>② Chuyển tiếp</strong> <span style="color:#22c55e;">✓</span> → <strong>③ JWT</strong> <span style="color:#22c55e;">✓</span> (chữ ký vẫn OK) → <strong>④ Ràng buộc</strong> <span style="color:#22c55e;">✓</span> (cùng chứng chỉ) → <strong>⑤ Kiểm tra jti</strong>: <strong style="color:#ef4444;">❌ ĐÃ TỒN TẠI trong cache!</strong> → <strong>⑥ Chặn</strong> <span style="color:#ef4444;">403 Forbidden</span><br><br>
+
+        <strong>Nguyên lý bảo mật — One-Time Token (jti):</strong><br>
+        &nbsp;&nbsp;• Mỗi JWT do Keycloak cấp có claim <code>jti</code> (JWT ID) — một UUID duy nhất<br>
+        &nbsp;&nbsp;• ext_authz lưu <code>jti</code> vào replay cache (Redis) khi xử lý request đầu tiên<br>
+        &nbsp;&nbsp;• Mọi request sau với cùng <code>jti</code> → bị từ chối với HTTP 403<br>
+        &nbsp;&nbsp;• TTL của cache bằng với thời gian sống của token (mặc định 10 phút)<br>
+        <strong>Kết luận:</strong> Dù attacker có đủ <strong>cả token lẫn certificate</strong>, chúng vẫn không thể replay — mỗi JWT chỉ có giá trị sử dụng đúng <strong>một lần</strong>. Cơ chế này ngăn chặn hiệu quả replay attack trong thực tế.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#22c55e;">Lần 1: HTTP 200 OK</strong> · <strong style="color:#ef4444;">Lần 2: HTTP 403 Forbidden</strong></div>
+      <button class="btn-attack" onclick="runTest('replay', this)">🔴 Mô phỏng tấn công</button>
+      <div class="result" id="result-replay"></div>
+    </div>
+
+    <!-- ==================== TEST 6: NO mTLS ==================== -->
+    <div class="test-card" data-test="no-mtls">
+      <div class="test-header">
+        <span class="icon-big">🔴</span>
+        <h3>Không có chứng chỉ client mTLS</h3>
+        <span class="tag tag-attack">Vector tấn công</span>
+      </div>
+      <div class="desc">Mô phỏng kịch bản attacker gửi request <strong>mà không có bất kỳ client certificate nào</strong>. Đây là lớp phòng thủ đầu tiên: TLS handshake thất bại ngay từ đầu, không có HTTP request nào được tạo.</div>
+
+      <div class="flow-detail" id="flow-no-mtls">
+        <div class="flow-step" data-step="mtls">
+          <span class="f-icon">🔐</span>
+          <span class="f-label">Yêu cầu mTLS</span>
+          <span class="f-sub">Không có chứng chỉ</span>
+          <div class="f-result" id="log-no-mtls-mtls"></div>
+        </div>
+        <div class="flow-step" data-step="envoy">
+          <span class="f-icon">🔒</span>
+          <span class="f-label">Kiểm tra Envoy</span>
+          <span class="f-sub">require_client_cert</span>
+          <div class="f-result" id="log-no-mtls-envoy"></div>
+        </div>
+        <div class="flow-step" data-step="block">
+          <span class="f-icon">💥</span>
+          <span class="f-label">Lỗi TLS</span>
+          <span class="f-sub">Kết nối bị hủy</span>
+          <div class="f-result" id="log-no-mtls-block"></div>
+        </div>
+      </div>
+
+      <div class="explanation">
+        <strong>Mục tiêu:</strong> Kiểm tra lớp phòng thủ <strong>đầu tiên và mạnh nhất</strong> — mTLS ở tầng giao thức. Không có chứng chỉ client → không có kết nối TLS → không có request HTTP.<br><br>
+
+        <strong>Phân tích luồng xử lý (4 bước):</strong><br>
+        <strong>① TLS ClientHello</strong> — Client kết nối tới Envoy trên port <code>10000</code> (protected listener). TLS handshake bắt đầu với <code>ClientHello</code>, client <strong>không gửi certificate</strong>.<br><br>
+
+        <strong>② Envoy requests client certificate</strong> — Envoy được cấu hình <code>require_client_certificate: true</code>. Trong quá trình handshake, Envoy gửi <code>CertificateRequest</code> chỉ chấp nhận certificate được <strong>RA Intermediate CA</strong> (ký bởi <strong>Root CA</strong>) cấp. Client buộc phải trả lời với certificate hợp lệ.<br><br>
+
+        <strong>③ Handshake thất bại</strong> — Client không gửi certificate (hoặc gửi danh sách rỗng). Envoy từ chối handshake với TLS alert. <strong style="color:#ef4444;">❌ TLS handshake failed: certificate required</strong><br><br>
+
+        <strong>④ TCP connection bị đóng</strong> — TCP connection bị đóng ngay lập tức. <strong>Không có HTTP request nào được tạo.</strong> ext_authz và backend <strong>hoàn toàn không biết</strong> về request này.<br><br>
+
+        <strong>Nguyên lý bảo mật — mTLS là nền tảng:</strong><br>
+        Trong mô hình zero-trust, <strong>không implicit trust</strong> dựa trên network internal. mTLS đảm bảo:<br>
+        &nbsp;&nbsp;• <strong>Mutual authentication:</strong> Server chứng minh danh tính với client, client chứng minh danh tính với server<br>
+        &nbsp;&nbsp;• <strong>PKI hierarchy:</strong> <strong>Root CA</strong> (offline, bảo mật tuyệt đối) ký cho <strong>RA Intermediate CA</strong> (hoạt động hàng ngày), RA ký cho tất cả leaf certs. Envoy chỉ trust RA.<br>
+        &nbsp;&nbsp;• <strong>Chặn từ gốc:</strong> Client không có certificate của RA → không thể kết nối → không cần xử lý ở tầng application<br>
+        <strong>Kết luận:</strong> mTLS là <strong>first line of defense</strong> trong kiến trúc zero-trust. Không vượt qua được mTLS thì mọi lớp bảo vệ phía sau đều không cần hoạt động.
+      </div>
+      <div class="expect">Mong đợi: <strong style="color:#f59e0b;font-size:20px;">Lỗi bắt tay TLS (kết nối bị từ chối)</strong></div>
+      <button class="btn-attack" onclick="runTest('no-mtls', this)">🔴 Mô phỏng tấn công</button>
+      <div class="result" id="result-no-mtls"></div>
+    </div>
+
+  </div>
+
+  <div class="all-result" id="result-all"></div>
+
+  <div class="footer">
+    Zero-Trust API mTLS · Xây dựng với Envoy + Keycloak + Go ext_authz · Đồ án bảo mật
+  </div>
+</main>
+
+<script>
+const TESTS = ['success', 'no-token', 'invalid-token', 'wrong-cert-binding', 'replay', 'no-mtls'];
+
+const LOG_MAP = {
+  success: {
+    mtls:    "✅ Envoy chấp nhận chứng chỉ client (CN=demo-client). TLS đã được thiết lập.",
+    forward: "✅ Metadata yêu cầu được chuyển tiếp tới ext_authz qua gRPC.",
+    jwt:     "✅ Chữ ký JWT được xác minh với JWKS của Keycloak. exp/iss/aud OK.",
+    binding: "✅ cnf.x5t#S256 khớp với SHA-256 của chứng chỉ đã gửi. Token được ràng buộc với client này.",
+    replay:  "✅ jti là duy nhất. Đã lưu vào bộ nhớ đệm replay (TTL: 10 phút).",
+    backend: "✅ Tất cả kiểm tra đều qua! Envoy chuyển tiếp tới Protected API → 200 OK."
+  },
+  'no-token': {
+    mtls:    "✅ mTLS hợp lệ. Chứng chỉ client được chấp nhận.",
+    forward: "✅ Đã chuyển tiếp tới ext_authz. Không có header Authorization.",
+    jwt:     "❌ ext_authz: Không tìm thấy header 'Authorization: Bearer <token>'!",
+    block:   "🚫 Yêu cầu bị từ chối. HTTP 401 Unauthorized trả về cho client."
+  },
+  'invalid-token': {
+    mtls:    "✅ mTLS hợp lệ. Chứng chỉ client được chấp nhận.",
+    forward: "✅ Đã chuyển tiếp tới ext_authz với JWT giả mạo.",
+    jwt:     "❌ ext_authz: Phân tích/xác minh chữ ký JWT thất bại! Token không hợp lệ hoặc sai định dạng.",
+    block:   "🚫 Yêu cầu bị từ chối. HTTP 401 Unauthorized trả về cho client."
+  },
+  'wrong-cert-binding': {
+    mtls:    "✅ Chứng chỉ kẻ tấn công hợp lệ. mTLS qua.",
+    forward: "✅ Đã chuyển tiếp tới ext_authz với JWT bị đánh cắp + sai chứng chỉ.",
+    jwt:     "✅ Chữ ký JWT hợp lệ. Token OK về mặt mật mã.",
+    binding: "❌ KHÔNG KHỚP! cnf.x5t#S256 trong JWT (băm chứng chỉ nạn nhân) ≠ SHA-256(chứng chỉ tấn công)",
+    block:   "🚫 Cuộc tấn công bị chặn! HTTP 403 Forbidden: 'token không được ràng buộc với chứng chỉ đã gửi'."
+  },
+  replay: {
+    '1-mtls':    "✅ mTLS OK",
+    '1-forward': "✅ Đã chuyển tiếp",
+    '1-jwt':     "✅ JWT OK",
+    '1-bind':    "✅ Ràng buộc OK",
+    '1-cache':   "✅ jti đã lưu (lần dùng đầu)",
+    '1-backend': "✅ 200 OK",
+    '2-mtls':    "✅ mTLS OK",
+    '2-forward': "✅ Đã chuyển tiếp",
+    '2-jwt':     "✅ JWT OK",
+    '2-bind':    "✅ Ràng buộc OK",
+    '2-cache':   "❌ PHÁT HIỆN REPLAY! jti đã tồn tại trong bộ nhớ đệm!",
+    block:       "🚫 Cuộc tấn công bị chặn! HTTP 403 Forbidden: 'phát hiện replay'."
+  },
+  'no-mtls': {
+    mtls:   "❌ Client KHÔNG gửi bất kỳ chứng chỉ nào trong bắt tay TLS.",
+    envoy:  "❌ Envoy yêu cầu chứng chỉ client (require_client_certificate: true). Từ chối bắt tay.",
+    block:  "💥 Bắt tay TLS THẤT BẠI. Kết nối đã đóng. Không có yêu cầu HTTP nào tới ứng dụng."
+  }
+};
+
+const FLOW_MAP = {
+  success:              { mtls:'pass', forward:'pass', jwt:'pass', binding:'pass', replay:'pass', backend:'pass' },
+  'no-token':           { mtls:'pass', forward:'pass', jwt:'fail', block:'fail' },
+  'invalid-token':      { mtls:'pass', forward:'pass', jwt:'fail', block:'fail' },
+  'wrong-cert-binding': { mtls:'pass', forward:'pass', jwt:'pass', binding:'fail', block:'fail' },
+  replay: {
+    '1-mtls':'pass', '1-forward':'pass', '1-jwt':'pass', '1-bind':'pass', '1-cache':'pass', '1-backend':'pass',
+    '2-mtls':'pass', '2-forward':'pass', '2-jwt':'pass', '2-bind':'pass', '2-cache':'fail', block:'fail'
+  },
+  'no-mtls':            { mtls:'fail', envoy:'fail', block:'fail' }
+};
+
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const data = await r.json();
+    const cards = document.querySelectorAll('.status-card');
+    const svcs = ['keycloak', 'envoy', 'ext_authz', 'backend'];
+    svcs.forEach((s,i) => {
+      const info = data[s]||{};
+      const dot = cards[i].querySelector('.indicator');
+      const txt = cards[i].querySelector('.status-text');
+      if (info.status==='ok') { dot.className='indicator ok'; txt.innerHTML = '<span class="indicator ok"></span> Đang chạy'; }
+      else { dot.className='indicator error'; txt.innerHTML = '<span class="indicator error"></span> ' + (info.error||'Lỗi'); }
+    });
+    ['keycloak','envoy','ext_authz','backend'].forEach(s => {
+      const el = document.getElementById('arch-'+s);
+      if (el && data[s]?.status==='ok') el.classList.add('success');
+    });
+  } catch(e) { console.error(e); }
+}
+
+function updateFlow(name) {
+  const fm = FLOW_MAP[name];
+  if (!fm) return;
+  const fids = name==='replay' ? ['flow-replay-1','flow-replay-2'] : ['flow-'+name];
+  fids.forEach(fid => {
+    const c = document.getElementById(fid);
+    if (!c) return;
+    c.querySelectorAll('.flow-step').forEach(s => {
+      s.className = 'flow-step';
+      const log = s.querySelector('.f-result');
+      if (log) { log.className = 'f-result'; log.textContent = ''; }
+    });
+  });
+  const logs = LOG_MAP[name]||{};
+  Object.entries(fm).forEach(([step, result]) => {
+    fids.forEach(fid => {
+      const el = document.querySelector(`#${fid} [data-step="${step}"]`);
+      if (!el) return;
+      el.classList.add(result);
+      const logEl = el.querySelector('.f-result');
+      if (logEl && logs[step]) {
+        logEl.textContent = logs[step];
+        logEl.classList.add('show');
+      }
+    });
+  });
+}
+
+async function runTest(name, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Đang chạy...';
+
+  const card = btn.closest('.test-card');
+  card.classList.remove('passed','failed');
+  const resultEl = document.getElementById('result-'+name);
+  resultEl.className = 'result show info';
+  resultEl.innerHTML = '<div class="label">⏳ Đang chạy kiểm tra...</div>';
+
+  try {
+    const r = await fetch('/api/test/'+name);
+    const data = await r.json();
+    showResult(name, data, resultEl);
+    updateFlow(name);
+    setTimeout(() => card.classList.add(data.passed ? 'passed' : 'failed'), 100);
+  } catch(e) {
+    resultEl.className = 'result show fail';
+    resultEl.innerHTML = '<div class="label">❌ Lỗi</div><pre>'+e.message+'</pre>';
+  }
+
+  btn.disabled = false;
+  btn.textContent = orig;
+  updateCounts();
+}
+
+function showResult(name, data, el) {
+  const passed = data.passed;
+  if (name==='replay') {
+    const ok = data.first?.status===200 && data.second?.status===403;
+    el.className = 'result show '+(ok?'pass':'fail');
+    let h = `<div class="label">${ok?'✅ ĐẠT':'❌ KHÔNG ĐẠT'} — ${data.test}</div>`;
+    h += `<div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;">`;
+    h += `<span>Lần 1: <span class="status-code ${data.first?.status===200?'ok':'deny'}">${data.first?.status||'LỖI'}</span></span>`;
+    h += `<span>Lần 2: <span class="status-code ${data.second?.status===403?'deny':'ok'}">${data.second?.status||'LỖI'}</span></span></div>`;
+    if (data.first?.body) h += `<pre>Lần 1: ${data.first.body}</pre>`;
+    if (data.second?.body) h += `<pre>Lần 2: ${data.second.body}</pre>`;
+    el.innerHTML = h;
+    return;
+  }
+  el.className = 'result show '+(passed?'pass':'fail');
+  let h = `<div class="label">${passed?'✅ ĐẠT':'❌ KHÔNG ĐẠT'} — ${data.test}</div>`;
+  h += `<div>Nhận được: <span class="status-code ${passed?'ok':'deny'}">${data.result?.status||data.error}</span></div>`;
+  if (data.result?.body) h += `<pre>${data.result.body}</pre>`;
+  if (data.result?.error) h += `<pre style="color:#f59e0b;">${data.error||data.result.error}</pre>`;
+  el.innerHTML = h;
+}
+
+function updateCounts() {
+  let pass = 0;
+  TESTS.forEach(t => { const e=document.getElementById('result-'+t); if(e&&e.classList.contains('pass')) pass++; });
+  document.getElementById('passCount').textContent = pass;
+  document.getElementById('totalCount').textContent = TESTS.length;
+}
+
+async function runAllTests() {
+  const ae = document.getElementById('result-all');
+  ae.className = 'all-result show'; ae.innerHTML = '⏳ Đang chạy tất cả kiểm tra bảo mật...';
+  for (const t of TESTS) {
+    const btn = document.querySelector(`[data-test="${t}"] button:last-of-type`);
+    await runTest(t, btn);
+  }
+  const p = parseInt(document.getElementById('passCount').textContent);
+  const total = TESTS.length;
+  const allOk = p===total;
+  ae.className = 'all-result show '+(allOk?'pass-all':'fail-some');
+  ae.innerHTML = allOk
+    ? '<div>🎉 TẤT CẢ 6 KIỂM TRA BẢO MẬT ĐẠT YÊU CẦU</div><div class="sub">Kiến trúc Zero-Trust đã được xác minh — mTLS + Proof-of-Possession + Replay protection hoạt động chính xác. Tất cả 6 kịch bản tấn công đều bị chặn thành công.</div>'
+    : '<div>⚠️ MỘT SỐ KIỂM TRA KHÔNG ĐẠT</div><div class="sub">'+p+'/'+total+' đạt</div>';
+  if (allOk) spawnConfetti();
+}
+
+function resetAll() {
+  TESTS.forEach(t => {
+    const card = document.querySelector(`[data-test="${t}"]`);
+    if(card) card.classList.remove('passed','failed');
+    const e=document.getElementById('result-'+t);
+    if(e){e.className='result';e.innerHTML='';}
+    const fids = t==='replay'?['flow-replay-1','flow-replay-2']:['flow-'+t];
+    fids.forEach(fid => {
+      const c=document.getElementById(fid);
+      if(!c)return;
+      c.querySelectorAll('.flow-step').forEach(s => {
+        s.className='flow-step';
+        const l=s.querySelector('.f-result');
+        if(l){l.className='f-result';l.textContent='';}
+      });
+    });
+  });
+  document.getElementById('result-all').className='all-result';document.getElementById('result-all').innerHTML='';
+  document.getElementById('passCount').textContent='0';
+  document.querySelectorAll('.test-card button:last-of-type').forEach(b=>b.disabled=false);
+}
+
+function spawnConfetti() {
+  const c=document.createElement('div');c.className='confetti-container';
+  document.body.appendChild(c);
+  const colors=['#22c55e','#60a5fa','#a78bfa','#f472b6','#f59e0b','#38bdf8'];
+  for(let i=0;i<80;i++){
+    const e=document.createElement('div');e.className='confetti';
+    e.style.left=Math.random()*100+'%';
+    e.style.background=colors[Math.floor(Math.random()*colors.length)];
+    e.style.width=(3+Math.random()*6)+'px';e.style.height=(3+Math.random()*6)+'px';
+    e.style.borderRadius=Math.random()>0.5?'50%':'2px';
+    e.style.animationDuration=(2+Math.random()*3)+'s';
+    e.style.animationDelay=Math.random()*2+'s';
+    c.appendChild(e);
+  }
+  setTimeout(()=>c.remove(),6000);
+}
+
+checkStatus();
+setInterval(checkStatus,10000);
+</script>
+</body>
+</html>

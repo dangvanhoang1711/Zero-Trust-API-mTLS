@@ -1,2 +1,7 @@
 project_root/envoy_config/tls/*
 project_root/new_cert.json
+.bin/helm
+.bin/vault
+/bin/helm
+/bin/vault
+/.bin/

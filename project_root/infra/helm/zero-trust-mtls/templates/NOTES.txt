@@ -1,0 +1,13 @@
+1. Install this chart with:
+
+   helm install zero-trust-mtls ./zero-trust-mtls
+
+2. Verify deployments:
+
+   kubectl get pods,svc -l app.kubernetes.io/name=zero-trust-mtls
+
+3. Reach Envoy gateway service:
+
+   kubectl port-forward svc/{{ .Values.envoy.serviceName }} 10000:{{ .Values.envoy.servicePort }}
+
+4. Run the project functional scripts from project_root/tests/run-all.sh against the gateway endpoint.

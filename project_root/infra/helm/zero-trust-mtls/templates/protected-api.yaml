@@ -1,0 +1,40 @@
+{{- if .Values.protectedApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.protectedApi.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+    app: {{ .Values.protectedApi.serviceName }}
+spec:
+  replicas: {{ .Values.protectedApi.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.protectedApi.serviceName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.protectedApi.serviceName }}
+    spec:
+      containers:
+        - name: protected-api
+          image: "{{ .Values.protectedApi.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.protectedApi.containerPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.protectedApi.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Values.protectedApi.serviceName }}
+  ports:
+    - protocol: TCP
+      port: {{ .Values.protectedApi.servicePort }}
+      targetPort: {{ .Values.protectedApi.targetPort }}
+  type: ClusterIP
+{{- end }}

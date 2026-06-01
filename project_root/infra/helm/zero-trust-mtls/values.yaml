@@ -1,0 +1,201 @@
+global:
+  imagePullPolicy: IfNotPresent
+
+postgres:
+  enabled: true
+  image: postgres:15
+  replicas: 1
+  serviceName: postgres
+  port: 5432
+  env:
+    POSTGRES_DB: keycloak
+    POSTGRES_USER: keycloak
+    POSTGRES_PASSWORD: password
+
+keycloak:
+  enabled: true
+  image: quay.io/keycloak/keycloak:26.5.7
+  replicas: 1
+  serviceName: keycloak
+  servicePort: 8080
+  containerPort: 8080
+  realm: zero-trust
+  env:
+    KEYCLOAK_ADMIN: admin
+    KEYCLOAK_ADMIN_PASSWORD: admin
+    KC_DB: postgres
+    KC_HOSTNAME_STRICT: "false"
+    KC_HTTP_ENABLED: "true"
+    KC_BOOTSTRAP_ADMIN_USERNAME: admin
+    KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    KC_PROXY_HEADERS: xforwarded
+
+extAuthz:
+  enabled: true
+  image: ext-authz:go
+  replicas: 1
+  serviceName: ext-authz
+  servicePort: 50051
+  containerPort: 50051
+  env:
+    TZ: Asia/Ho_Chi_Minh
+    FORCE_ALLOW_FOR_DEMO: "false"
+  jwtIssuer: "http://keycloak:8080/realms/zero-trust"
+  jwtAudience: "api-gateway"
+  jwksRefreshInterval: 5m
+  replayTTL: 10m
+  requiredScope: ""
+  requiredScopes: ""
+  dpopMaxAge: 2m
+  dpopClockSkew: 2s
+
+backend:
+  enabled: true
+  image: zero-trust-echo:latest
+  replicas: 1
+  serviceName: backend
+  servicePort: 80
+  targetPort: 8080
+  containerPort: 8080
+
+protectedApi:
+  enabled: true
+  image: zero-trust-protected-api:latest
+  replicas: 1
+  serviceName: protected-api
+  servicePort: 80
+  targetPort: 8080
+  containerPort: 8080
+
+envoy:
+  enabled: true
+  image: envoyproxy/envoy:v1.30.10
+  replicas: 1
+  serviceName: envoy-service
+  servicePort: 10000
+  adminPort: 9901
+  containerPort: 10000
+  serviceType: ClusterIP
+  configMapName: envoy-config
+  tls:
+    enabled: true
+    secretName: envoy-server-tls
+    certFile: server-chain.crt
+    keyFile: server.key
+    caFile: intermediate-ca.crt
+    crlFile: ca.crl
+  config: |
+    static_resources:
+      listeners:
+        - name: https_listener
+          address:
+            socket_address:
+              address: 0.0.0.0
+              port_value: 10000
+          listener_filters:
+            - name: envoy.filters.listener.tls_inspector
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+          filter_chains:
+            - transport_socket:
+                name: envoy.transport_sockets.tls
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+                  require_client_certificate: true
+                  common_tls_context:
+                    tls_certificates:
+                      - certificate_chain:
+                          filename: /etc/envoy/tls/{{ .Values.envoy.tls.certFile }}
+                        private_key:
+                          filename: /etc/envoy/tls/{{ .Values.envoy.tls.keyFile }}
+                    validation_context:
+                      trusted_ca:
+                        filename: /etc/envoy/tls/{{ .Values.envoy.tls.caFile }}
+                      crl:
+                        filename: /etc/envoy/tls/{{ .Values.envoy.tls.crlFile }}
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                forward_client_cert_details: SANITIZE_SET
+                set_current_client_cert_details:
+                  subject: true
+                  cert: true
+                  uri: true
+                  dns: true
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/protected"
+                          route:
+                            cluster: protected_api_service
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: backend_service
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      grpc_service:
+                        envoy_grpc:
+                          cluster_name: ext_authz_service
+                        timeout: 0.5s
+                      failure_mode_allow: false
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+      clusters:
+        - name: ext_authz_service
+          type: STRICT_DNS
+          connect_timeout: 0.5s
+          http2_protocol_options: {}
+          load_assignment:
+            cluster_name: ext_authz_service
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: {{ .Values.extAuthz.serviceName }}
+                          port_value: {{ .Values.extAuthz.servicePort }}
+
+        - name: backend_service
+          type: STRICT_DNS
+          connect_timeout: 0.5s
+          load_assignment:
+            cluster_name: backend_service
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: {{ .Values.backend.serviceName }}
+                          port_value: {{ .Values.backend.targetPort }}
+
+        - name: protected_api_service
+          type: STRICT_DNS
+          connect_timeout: 0.5s
+          load_assignment:
+            cluster_name: protected_api_service
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: {{ .Values.protectedApi.serviceName }}
+                          port_value: {{ .Values.protectedApi.targetPort }}
+
+    admin:
+      access_log_path: /tmp/admin_access.log
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: {{ .Values.envoy.adminPort }}

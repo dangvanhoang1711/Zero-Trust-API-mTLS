@@ -1,0 +1,62 @@
+{{- if .Values.extAuthz.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.extAuthz.serviceName }}-service
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+    app: {{ .Values.extAuthz.serviceName }}
+spec:
+  replicas: {{ .Values.extAuthz.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.extAuthz.serviceName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.extAuthz.serviceName }}
+    spec:
+      containers:
+        - name: auth-agent
+          image: "{{ .Values.extAuthz.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.extAuthz.containerPort }}
+          env:
+            - name: FORCE_ALLOW_FOR_DEMO
+              value: "{{ .Values.extAuthz.env.FORCE_ALLOW_FOR_DEMO }}"
+            - name: TZ
+              value: "{{ .Values.extAuthz.env.TZ }}"
+            - name: PORT
+              value: "{{ .Values.extAuthz.containerPort }}"
+            - name: JWT_ISSUER
+              value: "{{ .Values.extAuthz.jwtIssuer }}"
+            - name: JWT_AUDIENCE
+              value: "{{ .Values.extAuthz.jwtAudience }}"
+            - name: JWKS_REFRESH_INTERVAL
+              value: "{{ .Values.extAuthz.jwksRefreshInterval }}"
+            - name: REPLAY_TTL
+              value: "{{ .Values.extAuthz.replayTTL }}"
+            - name: REQUIRED_SCOPE
+              value: "{{ .Values.extAuthz.requiredScope }}"
+            - name: REQUIRED_SCOPES
+              value: "{{ .Values.extAuthz.requiredScopes }}"
+            - name: DPoP_MAX_AGE
+              value: "{{ .Values.extAuthz.dpopMaxAge }}"
+            - name: DPoP_CLOCK_SKEW
+              value: "{{ .Values.extAuthz.dpopClockSkew }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.extAuthz.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Values.extAuthz.serviceName }}
+  ports:
+    - port: {{ .Values.extAuthz.servicePort }}
+      targetPort: {{ .Values.extAuthz.containerPort }}
+  type: ClusterIP
+{{- end }}

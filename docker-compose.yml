@@ -1,0 +1,94 @@
+name: zero-trust-mvp
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      KC_DB: "dev-file"
+      KC_HOSTNAME: "http://keycloak:8080"
+      KC_HTTP_ENABLED: "true"
+      REALM_EXPORT_PATH: "/opt/keycloak/data/import/realm-export.json"
+    volumes:
+      - ./project_root/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "18080:8080"
+    restart: unless-stopped
+
+  ext_authz:
+    build:
+      context: ./project_root/ext_authz
+    depends_on:
+      - keycloak
+      - replay-cache
+    environment:
+      PORT: "50051"
+      JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
+      JWT_AUDIENCE: "api-gateway"
+      JWKS_REFRESH_INTERVAL: "5m"
+      REPLAY_TTL: "10m"
+      REQUIRED_SCOPE: "${REQUIRED_SCOPE:-}"
+      REQUIRED_SCOPES: "${REQUIRED_SCOPES:-}"
+      AUTHZ_POLICY_FILE: "${AUTHZ_POLICY_FILE:-}"
+      REPLAY_BACKEND: "${REPLAY_BACKEND:-memory}"
+      REPLAY_REDIS_URL: "${REPLAY_REDIS_URL:-redis://replay-cache:6379/0}"
+      REPLAY_REDIS_KEY_PREFIX: "${REPLAY_REDIS_KEY_PREFIX:-zero-trust:replay}"
+    expose:
+      - "50051"
+    restart: unless-stopped
+
+  replay-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./project_root/infra/services/echo
+    environment:
+      PORT: "8080"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  protected-api:
+    build:
+      context: ./project_root/infra/services/protected-api
+    environment:
+      PORT: "8080"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.15
+    command: ["vault", "server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR: http://0.0.0.0:8200
+      VAULT_DEV_ROOT_TOKEN_ID: root
+    cap_add:
+      - IPC_LOCK
+    restart: unless-stopped
+
+  envoy:
+    image: envoyproxy/envoy:v1.30.10
+    command:
+      - "envoy"
+      - "-c"
+      - "/etc/envoy/envoy.yaml"
+      - "--log-level"
+      - "warning"
+    volumes:
+      - ./project_root/envoy_config/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./project_root/envoy_config/tls:/etc/envoy/tls:ro
+    ports:
+      - "10001:10001"
+      - "10000:10000"
+    depends_on:
+      - ext_authz
+      - backend
+      - protected-api
+    restart: unless-stopped
