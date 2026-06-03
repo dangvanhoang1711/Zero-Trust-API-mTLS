@@ -9,6 +9,7 @@ set -euo pipefail
 #                     └── signs ──► Client cert (CN=demo-client)
 #
 # Requires: docker container zero-trust-mvp-vault-1 running
+# Or: VAULT_ADDR + VAULT_TOKEN env vars (e.g. http://vault:8200 + root)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # = project_root/ (parent of infra/)
@@ -22,12 +23,24 @@ VAULT_CONTAINER="zero-trust-mvp-vault-1"
 mkdir -p "$PKI_DIR" "$CERTS_DIR" "$ENVOY_TLS_DIR" "$ENVOY_TRUST_DIR"
 
 VAULT() {
-  docker exec -i -e VAULT_TOKEN=root "$VAULT_CONTAINER" vault "$@"
+  if command -v vault > /dev/null 2>&1 && [ -n "${VAULT_ADDR:-}" ]; then
+    vault "$@"
+  else
+    docker exec -i -e VAULT_TOKEN=root "$VAULT_CONTAINER" vault "$@"
+  fi
+}
+
+VAULT_STATUS() {
+  if command -v vault > /dev/null 2>&1 && [ -n "${VAULT_ADDR:-}" ]; then
+    vault status > /dev/null 2>&1
+  else
+    docker exec "$VAULT_CONTAINER" vault status > /dev/null 2>&1
+  fi
 }
 
 echo "=== 1. Wait for Vault ==="
 for i in $(seq 1 30); do
-  if docker exec "$VAULT_CONTAINER" vault status > /dev/null 2>&1; then
+  if VAULT_STATUS; then
     echo "  Vault ready"
     break
   fi
