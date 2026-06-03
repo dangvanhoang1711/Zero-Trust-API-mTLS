@@ -497,13 +497,13 @@
         <strong>② Chuyển tiếp tới ext_authz</strong> — Envoy đính kèm metadata chứng chỉ client vào header <code>X-Forwarded-Client-Cert</code> (XFCC) và gửi request (gồm Authorization header) tới dịch vụ <code>ext_authz</code> qua gRPC để đánh giá chính sách.<br><br>
 
         <strong>③ Xác minh JWT</strong> — ext_authz lấy JWKS từ Keycloak (<code>/realms/zero-trust/protocol/openid-connect/certs</code>), xác minh:<br>
-        &nbsp;&nbsp;• Chữ ký số RSA-SHA256 của token<br>
+        &nbsp;&nbsp;• Chữ ký số ECDSA P-256 (ES256) của token<br>
         &nbsp;&nbsp;• Thời hạn (<code>exp</code>): token chưa hết hạn<br>
         &nbsp;&nbsp;• Nhà phát hành (<code>iss</code>): khớp với issuer đã cấu hình<br>
         &nbsp;&nbsp;• Đối tượng (<code>aud</code>): <code>api-gateway</code><br>
         <strong style="color:#22c55e;">✓ Token hợp lệ</strong><br><br>
 
-        <strong>④ Ràng buộc chứng chỉ (Proof-of-Possession)</strong> — ext_authz trích xuất claim <code>cnf.x5t#S256</code> từ JWT (chứa SHA-256 thumbprint của <code>client.crt</code> được hardcode trong Keycloak protocol mapper), tính SHA-256 của chứng chỉ thực tế từ XFCC header, so sánh 2 giá trị. <strong style="color:#22c55e;">✓ Khớp → token thuộc về client này</strong><br><br>
+        <strong>④ Ràng buộc chứng chỉ (Proof-of-Possession)</strong> — ext_authz trích xuất claim <code>cnf.x5t#S256</code> từ JWT, tính SHA-256 thumbprint của client cert từ XFCC header, so sánh 2 giá trị. <strong style="color:#22c55e;">✓ Khớp → token thuộc về client này</strong><br><br>
 
         <strong>⑤ Chống tấn công Replay</strong> — ext_authz kiểm tra <code>jti</code> (JWT ID) trong bộ nhớ đệm (Redis). Nếu chưa tồn tại → lưu với TTL 10 phút. <strong style="color:#22c55e;">✓ jti mới → cho phép</strong><br><br>
 
@@ -620,7 +620,7 @@
 
         <strong>③ Xác minh JWT</strong> — ext_authz phân tích JWT và xác minh chữ ký số với JWKS endpoint của Keycloak. Ba dạng tấn công thường gặp:<br>
         &nbsp;&nbsp;• <strong>Token sai định dạng:</strong> Không thể giải mã base64url header/payload → từ chối ngay<br>
-        &nbsp;&nbsp;• <strong>Chữ ký không hợp lệ:</strong> Token giải mã được nhưng chữ ký RSA-SHA256 không khớp với JWKS → từ chối<br>
+        &nbsp;&nbsp;• <strong>Chữ ký không hợp lệ:</strong> Token giải mã được nhưng chữ ký ECDSA P-256 (ES256) không khớp với JWKS → từ chối<br>
         &nbsp;&nbsp;• <strong>Tấn công "alg: none":</strong> Token có <code>alg: none</code> bị thư viện JWT từ chối (unsigned token)<br>
         <strong style="color:#ef4444;">❌ Xác minh chữ ký thất bại!</strong> ext_authz không tiến hành các bước tiếp theo (ràng buộc chứng chỉ, chống replay).<br><br>
 

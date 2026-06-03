@@ -93,8 +93,8 @@ VAULT write pki-int/roles/server-cert \
   allow_any_name=true \
   max_ttl=730h \
   ttl=730h \
-  key_type=rsa \
-  key_bits=2048 \
+  key_type=ec \
+  key_bits=256 \
   server_flag=true \
   client_flag=false 2>/dev/null || echo "  Role 'server-cert' already exists, skipping"
 
@@ -102,8 +102,8 @@ VAULT write pki-int/roles/client-cert \
   allow_any_name=true \
   max_ttl=730h \
   ttl=730h \
-  key_type=rsa \
-  key_bits=2048 \
+  key_type=ec \
+  key_bits=256 \
   server_flag=false \
   client_flag=true 2>/dev/null || echo "  Role 'client-cert' already exists, skipping"
 
@@ -174,6 +174,9 @@ echo "  -> $ENVOY_TLS_DIR/tls.crt  (server + issuing CA chain)"
 
 cp "$PKI_DIR/server.key" "$ENVOY_TLS_DIR/tls.key"
 echo "  -> $ENVOY_TLS_DIR/tls.key"
+
+cp "$PKI_DIR/root-ca.crt" "$ENVOY_TRUST_DIR/root-ca.crt"
+echo "  -> $ENVOY_TRUST_DIR/root-ca.crt  (Root CA trust anchor for Envoy)"
 
 cp "$PKI_DIR/ca-chain.crt" "$ENVOY_TRUST_DIR/intermediate-ca.crt"
 echo "  -> $ENVOY_TRUST_DIR/intermediate-ca.crt  (CA chain for mTLS client verification)"

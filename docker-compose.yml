@@ -9,20 +9,26 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: "admin"
       KC_DB: "dev-file"
       KC_HOSTNAME: "http://keycloak:8080"
-      KC_HTTP_ENABLED: "true"
-      REALM_EXPORT_PATH: "/opt/keycloak/data/import/realm-export.json"
     volumes:
       - ./project_root/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/master/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   ext_authz:
     build:
       context: ./project_root/ext_authz
     depends_on:
-      - keycloak
-      - replay-cache
+      keycloak:
+        condition: service_healthy
+      replay-cache:
+        condition: service_started
     environment:
       PORT: "50051"
       JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
@@ -31,13 +37,23 @@ services:
       REPLAY_TTL: "10m"
       REQUIRED_SCOPE: "${REQUIRED_SCOPE:-}"
       REQUIRED_SCOPES: "${REQUIRED_SCOPES:-}"
-      AUTHZ_POLICY_FILE: "${AUTHZ_POLICY_FILE:-}"
+      AUTHZ_POLICY_FILE: "/etc/ext-authz/config/authz-policy.yaml"
       REPLAY_BACKEND: "${REPLAY_BACKEND:-memory}"
       REPLAY_REDIS_URL: "${REPLAY_REDIS_URL:-redis://replay-cache:6379/0}"
       REPLAY_REDIS_KEY_PREFIX: "${REPLAY_REDIS_KEY_PREFIX:-zero-trust:replay}"
       CLIENT_CA_BUNDLE: "/etc/ca-bundle/ca-chain.crt"
+      DPoP_REQUIRE_NONCE: "true"
+      DPoP_MAX_AGE: "2m"
+      DPoP_CLOCK_SKEW: "2s"
+      DPoP_NONCE_TTL: "5m"
+      DPoP_PROOF_TTL: "5m"
+      DPoP_PROOF_MAX_ENTRIES: "100000"
+      CRL_DISTRIBUTION_URL: "http://vault:8200/v1/pki-int/crl"
+      CRL_REFRESH_INTERVAL: "15m"
+      VAULT_TOKEN: "root"
     volumes:
       - ./project_root/infra/certs/ca-chain.crt:/etc/ca-bundle/ca-chain.crt:ro
+      - ./project_root/ext_authz/config:/etc/ext-authz/config:ro
     expose:
       - "50051"
     restart: unless-stopped
@@ -45,12 +61,15 @@ services:
   replay-cache:
     image: redis:7-alpine
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   backend:
     build:
       context: ./project_root/infra/services/echo
-    environment:
-      PORT: "8080"
     expose:
       - "8080"
     restart: unless-stopped
@@ -58,39 +77,8 @@ services:
   protected-api:
     build:
       context: ./project_root/infra/services/protected-api
-    environment:
-      PORT: "8080"
     expose:
       - "8080"
-    restart: unless-stopped
-
-  dashboard:
-    build:
-      context: ./project_root/dashboard
-    depends_on:
-      - keycloak
-      - envoy
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./project_root/infra/certs:/app/../infra/certs:ro
-    environment:
-      KEYCLOAK_URL: "http://keycloak:8080"
-      ENVOY_URL: "https://envoy:10000"
-      EXT_AUTHZ_URL: "http://ext_authz:50051"
-      DASHBOARD_PORT: "5000"
-    restart: unless-stopped
-
-  vault:
-    image: hashicorp/vault:1.15
-    command: ["vault", "server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
-    ports:
-      - "8200:8200"
-    environment:
-      VAULT_ADDR: http://0.0.0.0:8200
-      VAULT_DEV_ROOT_TOKEN_ID: root
-    cap_add:
-      - IPC_LOCK
     restart: unless-stopped
 
   envoy:
@@ -112,3 +100,37 @@ services:
       - backend
       - protected-api
     restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./project_root/dashboard
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      envoy:
+        condition: service_started
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./project_root/infra/certs:/app/../infra/certs:ro
+    environment:
+      KEYCLOAK_URL: "http://keycloak:8080"
+      ENVOY_URL: "https://envoy:10000"
+      DASHBOARD_PORT: "5000"
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.15
+    command: ["vault", "server", "-dev", "-dev-root-token-id=root", "-dev-listen-address=0.0.0.0:8200"]
+    ports:
+      - "127.0.0.1:8200:8200"
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5

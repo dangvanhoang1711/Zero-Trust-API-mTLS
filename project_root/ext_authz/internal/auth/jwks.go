@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
@@ -29,6 +32,9 @@ type jwksKey struct {
 	Alg string `json:"alg"`
 	N   string `json:"n"`
 	E   string `json:"e"`
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
 }
 
 type jwksResponse struct {
@@ -42,7 +48,7 @@ type JWKSCache struct {
 	fallbackTTL time.Duration
 
 	mu            sync.RWMutex
-	keysByKID     map[string]*rsa.PublicKey
+	keysByKID     map[string]crypto.PublicKey
 	nextRefreshAt time.Time
 	lastErr       error
 }
@@ -56,7 +62,7 @@ func NewJWKSCache(url string, fallbackTTL time.Duration) *JWKSCache {
 		url:         strings.TrimSpace(url),
 		httpClient:  &http.Client{Timeout: defaultJWKSHTTPTimeout},
 		fallbackTTL: fallbackTTL,
-		keysByKID:   make(map[string]*rsa.PublicKey),
+		keysByKID:   make(map[string]crypto.PublicKey),
 	}
 }
 
@@ -70,7 +76,7 @@ func (c *JWKSCache) Start(ctx context.Context) {
 	go c.refreshLoop(ctx)
 }
 
-func (c *JWKSCache) Lookup(kid string) (*rsa.PublicKey, error) {
+func (c *JWKSCache) Lookup(kid string) (crypto.PublicKey, error) {
 	c.mu.RLock()
 	key := c.keysByKID[kid]
 	err := c.lastErr
@@ -248,7 +254,7 @@ func (c *JWKSCache) setError(err error) {
 	c.mu.Unlock()
 }
 
-func parseJWKS(raw []byte) (map[string]*rsa.PublicKey, error) {
+func parseJWKS(raw []byte) (map[string]crypto.PublicKey, error) {
 	var doc jwksResponse
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, err
@@ -258,22 +264,37 @@ func parseJWKS(raw []byte) (map[string]*rsa.PublicKey, error) {
 		return nil, errors.New("jwks has no keys")
 	}
 
-	out := make(map[string]*rsa.PublicKey, len(doc.Keys))
+	out := make(map[string]crypto.PublicKey, len(doc.Keys))
 	for _, key := range doc.Keys {
-		if key.Kid == "" || key.Kty != "RSA" || key.N == "" || key.E == "" {
+		if key.Kid == "" {
 			continue
 		}
 
-		pubKey, err := jwkToRSAPublicKey(key.N, key.E)
-		if err != nil {
-			continue
-		}
+		switch key.Kty {
+		case "RSA":
+			if key.N == "" || key.E == "" {
+				continue
+			}
+			pubKey, err := jwkToRSAPublicKey(key.N, key.E)
+			if err != nil {
+				continue
+			}
+			out[key.Kid] = pubKey
 
-		out[key.Kid] = pubKey
+		case "EC":
+			if key.Crv == "" || key.X == "" || key.Y == "" {
+				continue
+			}
+			pubKey, err := jwkToECDSAPublicKey(key.Crv, key.X, key.Y)
+			if err != nil {
+				continue
+			}
+			out[key.Kid] = pubKey
+		}
 	}
 
 	if len(out) == 0 {
-		return nil, errors.New("jwks has no usable rsa keys")
+		return nil, errors.New("jwks has no usable keys")
 	}
 
 	return out, nil
@@ -300,6 +321,44 @@ func jwkToRSAPublicKey(nB64 string, eB64 string) (*rsa.PublicKey, error) {
 	}
 
 	return &rsa.PublicKey{N: n, E: e}, nil
+}
+
+func jwkToECDSAPublicKey(crvB64, xB64, yB64 string) (*ecdsa.PublicKey, error) {
+	var curve elliptic.Curve
+	switch crvB64 {
+	case "P-256":
+		curve = elliptic.P256()
+	case "P-384":
+		curve = elliptic.P384()
+	case "P-521":
+		curve = elliptic.P521()
+	default:
+		return nil, fmt.Errorf("unsupported EC curve: %s", crvB64)
+	}
+
+	xBytes, err := base64.RawURLEncoding.DecodeString(xB64)
+	if err != nil {
+		return nil, err
+	}
+	yBytes, err := base64.RawURLEncoding.DecodeString(yB64)
+	if err != nil {
+		return nil, err
+	}
+
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
+
+	pub := &ecdsa.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}
+
+	if !curve.IsOnCurve(x, y) {
+		return nil, errors.New("ec point is not on curve")
+	}
+
+	return pub, nil
 }
 
 func parseCacheControlMaxAge(cacheControl string, fallback time.Duration) time.Duration {

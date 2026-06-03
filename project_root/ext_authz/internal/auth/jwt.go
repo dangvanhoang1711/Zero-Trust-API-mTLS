@@ -33,7 +33,7 @@ func NewJWTVerifier(issuer string, audience string, cache *JWKSCache) *JWTVerifi
 		audience: strings.TrimSpace(audience),
 		cache:    cache,
 		parser: jwt.NewParser(
-			jwt.WithValidMethods([]string{"RS256", "RS384", "RS512"}),
+			jwt.WithValidMethods([]string{"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}),
 			jwt.WithIssuer(strings.TrimSpace(issuer)),
 			jwt.WithAudience(strings.TrimSpace(audience)),
 		),

@@ -21,7 +21,7 @@ trap 'rm -rf "$workdir"' EXIT
 forge_key="$workdir/fake-key.pem"
 forge_cert="$workdir/fake-cert.pem"
 
-openssl req -x509 -newkey rsa:2048 \
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
   -nodes \
   -keyout "$forge_key" \
   -out "$forge_cert" \

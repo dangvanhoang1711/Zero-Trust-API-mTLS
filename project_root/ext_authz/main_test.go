@@ -1,10 +1,11 @@
 package main
 
 import (
-	"crypto"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
@@ -447,7 +448,7 @@ func TestAuthzServer_Check_AllowsRequestWithHoKBinding(t *testing.T) {
 		"date": "Tue, 20 Oct 2026 12:00:00 GMT",
 	}
 
-	cnfJWK := buildRSACNFJWK(signer)
+	cnfJWK := buildECCNFJWK(signer)
 	token, err := buildTestTokenWithCNFJWK(
 		signer,
 		"test-kid",
@@ -471,7 +472,7 @@ func TestAuthzServer_Check_AllowsRequestWithHoKBinding(t *testing.T) {
 		requestHost,
 		requestHeaders,
 		[]string{"(request-target)", "host", "date"},
-		"rsa-sha256",
+		"ecdsa-sha256",
 	)
 
 	req := buildAuthzCheckRequestWithHeaders(
@@ -499,7 +500,7 @@ func TestAuthzServer_Check_DeniesRequestWithHoKBindingAndMissingSignature(t *tes
 	server, closeServer := newTestAuthzServer(t, "https://localhost:10000/realms/zero-trust", "api-gateway", signer)
 	defer closeServer()
 
-	cnfJWK := buildRSACNFJWK(signer)
+	cnfJWK := buildECCNFJWK(signer)
 	token, err := buildTestTokenWithCNFJWK(
 		signer,
 		"test-kid",
@@ -527,7 +528,7 @@ func TestAuthzServer_Check_DeniesRequestWithHoKBindingAndInvalidSignature(t *tes
 	server, closeServer := newTestAuthzServer(t, "https://localhost:10000/realms/zero-trust", "api-gateway", signer)
 	defer closeServer()
 
-	cnfJWK := buildRSACNFJWK(signer)
+	cnfJWK := buildECCNFJWK(signer)
 	token, err := buildTestTokenWithCNFJWK(
 		signer,
 		"test-kid",
@@ -556,7 +557,7 @@ func TestAuthzServer_Check_DeniesRequestWithHoKBindingAndInvalidSignature(t *tes
 		requestHost,
 		requestHeaders,
 		[]string{"(request-target)", "host", "date"},
-		"rsa-sha256",
+		"ecdsa-sha256",
 	)
 	invalidSignature, err := flipLastBase64Char(signatureHeader)
 	if err != nil {
@@ -583,10 +584,10 @@ func TestAuthzServer_Check_DeniesRequestWithHoKBindingAndInvalidSignature(t *tes
 	assertCheckStatus(t, resp, codes.Unauthenticated)
 }
 
-func generateTestSigningMaterial(t *testing.T) (*rsa.PrivateKey, string, string) {
+func generateTestSigningMaterial(t *testing.T) (*ecdsa.PrivateKey, string, string) {
 	t.Helper()
 
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
@@ -619,19 +620,27 @@ func generateTestSigningMaterial(t *testing.T) (*rsa.PrivateKey, string, string)
 	return privateKey, certPEM, hex.EncodeToString(certFingerprint[:])
 }
 
-func newTestAuthzServer(t *testing.T, issuer, audience string, signer *rsa.PrivateKey) (*authzServer, func()) {
+func newTestAuthzServer(t *testing.T, issuer, audience string, signer *ecdsa.PrivateKey) (*authzServer, func()) {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/protocol/openid-connect/certs":
+			xBytes := signer.PublicKey.X.Bytes()
+			yBytes := signer.PublicKey.Y.Bytes()
+			// Pad to 32 bytes for P-256
+			xPadded := make([]byte, 32)
+			yPadded := make([]byte, 32)
+			copy(xPadded[32-len(xBytes):], xBytes)
+			copy(yPadded[32-len(yBytes):], yBytes)
 			keys := []map[string]any{{
-				"kty": "RSA",
+				"kty": "EC",
 				"use": "sig",
-				"alg": "RS256",
+				"alg": "ES256",
 				"kid": "test-kid",
-				"n":   base64.RawURLEncoding.EncodeToString(signer.N.Bytes()),
-				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(signer.E)).Bytes()),
+				"crv": "P-256",
+				"x":   base64.RawURLEncoding.EncodeToString(xPadded),
+				"y":   base64.RawURLEncoding.EncodeToString(yPadded),
 			}}
 
 			w.Header().Set("Content-Type", "application/json")
@@ -662,7 +671,7 @@ func newTestAuthzServer(t *testing.T, issuer, audience string, signer *rsa.Priva
 }
 
 func buildTestToken(
-	signer *rsa.PrivateKey,
+	signer *ecdsa.PrivateKey,
 	keyID string,
 	issuer string,
 	audience string,
@@ -688,14 +697,14 @@ func buildTestToken(
 		claims[key] = value
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 	token.Header["kid"] = keyID
 
 	return token.SignedString(signer)
 }
 
 func buildTestTokenWithCNFJWK(
-	signer *rsa.PrivateKey,
+	signer *ecdsa.PrivateKey,
 	keyID string,
 	issuer string,
 	audience string,
@@ -719,7 +728,7 @@ func buildTestTokenWithCNFJWK(
 		claims[key] = value
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 	token.Header["kid"] = keyID
 
 	return token.SignedString(signer)
@@ -754,17 +763,24 @@ func buildAuthzCheckRequestWithHeaders(method, path, host, certPEM, token string
 	}
 }
 
-func buildRSACNFJWK(signer *rsa.PrivateKey) map[string]any {
+func buildECCNFJWK(signer *ecdsa.PrivateKey) map[string]any {
+	xBytes := signer.PublicKey.X.Bytes()
+	yBytes := signer.PublicKey.Y.Bytes()
+	xPadded := make([]byte, 32)
+	yPadded := make([]byte, 32)
+	copy(xPadded[32-len(xBytes):], xBytes)
+	copy(yPadded[32-len(yBytes):], yBytes)
 	return map[string]any{
-		"kty": "RSA",
-		"n":   base64.RawURLEncoding.EncodeToString(signer.N.Bytes()),
-		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(signer.E)).Bytes()),
+		"kty": "EC",
+		"crv": "P-256",
+		"x":   base64.RawURLEncoding.EncodeToString(xPadded),
+		"y":   base64.RawURLEncoding.EncodeToString(yPadded),
 	}
 }
 
 func buildHoKSignatureHeader(
 	t *testing.T,
-	privateKey *rsa.PrivateKey,
+	privateKey *ecdsa.PrivateKey,
 	method, path, host string,
 	headers map[string]string,
 	signedHeaders []string,
@@ -774,7 +790,8 @@ func buildHoKSignatureHeader(
 
 	canonicalString := buildHoKSigningString(method, path, host, headers, signedHeaders)
 	hashAlg := resolveHoKHash(algorithm)
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, hashAlg, hashSigningInput(hashAlg, canonicalString))
+	digest := hashSigningInput(hashAlg, canonicalString)
+	sig, err := ecdsa.SignASN1(rand.Reader, privateKey, digest)
 	if err != nil {
 		t.Fatalf("sign request: %v", err)
 	}
@@ -783,7 +800,7 @@ func buildHoKSignatureHeader(
 		`keyId="test-key",algorithm="%s",headers="%s",signature="%s"`,
 		algorithm,
 		strings.Join(signedHeaders, " "),
-		base64.StdEncoding.EncodeToString(signature),
+		base64.StdEncoding.EncodeToString(sig),
 	)
 }
 

@@ -2,19 +2,19 @@ package auth
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
-	"math/big"
 	"strings"
 	"testing"
 )
 
 func TestValidateHoKBinding_Success(t *testing.T) {
-	key, jwk := newTestRSACNFJWK(t)
+	key, jwk := newTestECCNFJWK(t)
 	method := "POST"
 	path := "/api/v1/resource"
 	host := "api.example.com"
@@ -22,7 +22,7 @@ func TestValidateHoKBinding_Success(t *testing.T) {
 		"host": host,
 		"date": "Tue, 20 Oct 2026 12:00:00 GMT",
 	}
-	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "rsa-sha256")
+	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "ecdsa-sha256")
 
 	err := ValidateHoKBinding(jwk, method, path, host, headers, signatureHeader)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestValidateHoKBinding_Success(t *testing.T) {
 }
 
 func TestValidateHoKBinding_MissingSignature(t *testing.T) {
-	key, jwk := newTestRSACNFJWK(t)
+	key, jwk := newTestECCNFJWK(t)
 	method := "GET"
 	path := "/"
 	host := "api.example.com"
@@ -48,7 +48,7 @@ func TestValidateHoKBinding_MissingSignature(t *testing.T) {
 }
 
 func TestValidateHoKBinding_BadSignature(t *testing.T) {
-	key, jwk := newTestRSACNFJWK(t)
+	key, jwk := newTestECCNFJWK(t)
 	method := "GET"
 	path := "/api/v1/resource"
 	host := "api.example.com"
@@ -56,7 +56,7 @@ func TestValidateHoKBinding_BadSignature(t *testing.T) {
 		"host": host,
 		"date": "Tue, 20 Oct 2026 12:00:00 GMT",
 	}
-	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "rsa-sha256")
+	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "ecdsa-sha256")
 	badSignatureHeader := strings.Replace(signatureHeader, "r", "s", 1)
 
 	err := ValidateHoKBinding(jwk, method, path, host, headers, badSignatureHeader)
@@ -66,14 +66,14 @@ func TestValidateHoKBinding_BadSignature(t *testing.T) {
 }
 
 func TestValidateHoKBinding_MissingHeader(t *testing.T) {
-	key, jwk := newTestRSACNFJWK(t)
+	key, jwk := newTestECCNFJWK(t)
 	method := "GET"
 	path := "/api/v1/resource"
 	host := "api.example.com"
 	headers := map[string]string{
 		"host": host,
 	}
-	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "rsa-sha256")
+	signatureHeader := newHoKSignatureHeader(t, key, method, path, host, headers, []string{"(request-target)", "host", "date"}, "ecdsa-sha256")
 
 	err := ValidateHoKBinding(jwk, method, path, host, headers, signatureHeader)
 	if err == nil {
@@ -82,7 +82,7 @@ func TestValidateHoKBinding_MissingHeader(t *testing.T) {
 }
 
 func TestParseSignatureHeader_WithQuotesAndCommas(t *testing.T) {
-	raw := `keyId="test",algorithm="rsa-sha256",headers="(request-target) host date",signature="abc,def"`
+	raw := `keyId="test",algorithm="ecdsa-sha256",headers="(request-target) host date",signature="abc,def"`
 	params, err := parseSignatureHeader(raw)
 	if err != nil {
 		t.Fatalf("expected parsed signature header, got %v", err)
@@ -92,17 +92,25 @@ func TestParseSignatureHeader_WithQuotesAndCommas(t *testing.T) {
 	}
 }
 
-func newTestRSACNFJWK(t *testing.T) (*rsa.PrivateKey, map[string]any) {
+func newTestECCNFJWK(t *testing.T) (*ecdsa.PrivateKey, map[string]any) {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate key: %v", err)
 	}
 
+	xBytes := key.PublicKey.X.Bytes()
+	yBytes := key.PublicKey.Y.Bytes()
+	xPadded := make([]byte, 32)
+	yPadded := make([]byte, 32)
+	copy(xPadded[32-len(xBytes):], xBytes)
+	copy(yPadded[32-len(yBytes):], yBytes)
+
 	jwk := map[string]any{
-		"kty": "RSA",
-		"n":   base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
-		"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+		"kty": "EC",
+		"crv": "P-256",
+		"x":   base64.RawURLEncoding.EncodeToString(xPadded),
+		"y":   base64.RawURLEncoding.EncodeToString(yPadded),
 	}
 
 	return key, jwk
@@ -110,7 +118,7 @@ func newTestRSACNFJWK(t *testing.T) (*rsa.PrivateKey, map[string]any) {
 
 func newHoKSignatureHeader(
 	t *testing.T,
-	privateKey *rsa.PrivateKey,
+	privateKey *ecdsa.PrivateKey,
 	method, path, host string,
 	headers map[string]string,
 	signedHeaders []string,
@@ -120,7 +128,8 @@ func newHoKSignatureHeader(
 
 	canonicalized := buildHoKSigningInput(method, path, host, headers, signedHeaders)
 	hashAlg := resolveHoKHash(algorithm)
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, hashAlg, hashSigningInput(hashAlg, canonicalized))
+	digest := hashSigningInput(hashAlg, canonicalized)
+	sig, err := ecdsa.SignASN1(rand.Reader, privateKey, digest)
 	if err != nil {
 		t.Fatalf("sign request: %v", err)
 	}
@@ -129,17 +138,17 @@ func newHoKSignatureHeader(
 		`keyId="test-key",algorithm="%s",headers="%s",signature="%s"`,
 		algorithm,
 		strings.Join(signedHeaders, " "),
-		base64.StdEncoding.EncodeToString(signature),
+		base64.StdEncoding.EncodeToString(sig),
 	)
 }
 
 func resolveHoKHash(algorithm string) crypto.Hash {
 	switch strings.ToLower(strings.TrimSpace(algorithm)) {
-	case "rsa-sha256", "ecdsa-sha256":
+	case "ecdsa-sha256":
 		return crypto.SHA256
-	case "rsa-sha384", "ecdsa-sha384":
+	case "ecdsa-sha384":
 		return crypto.SHA384
-	case "rsa-sha512", "ecdsa-sha512":
+	case "ecdsa-sha512":
 		return crypto.SHA512
 	default:
 		return crypto.SHA256

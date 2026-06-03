@@ -52,8 +52,8 @@ vault write "$INT_PATH/roles/server-cert" \
   allow_subdomains=true \
   max_ttl=24h \
   ttl=24h \
-  key_type=rsa \
-  key_bits=2048 \
+  key_type=ec \
+  key_bits=256 \
   server_flag=true \
   client_flag=false
 
@@ -61,8 +61,8 @@ vault write "$INT_PATH/roles/client-cert" \
   allow_any_name=true \
   max_ttl=24h \
   ttl=24h \
-  key_type=rsa \
-  key_bits=2048 \
+  key_type=ec \
+  key_bits=256 \
   server_flag=false \
   client_flag=true
 

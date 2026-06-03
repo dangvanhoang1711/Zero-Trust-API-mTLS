@@ -14,8 +14,8 @@ spec:
   duration: 24h
   renewBefore: 6h
   privateKey:
-    algorithm: RSA
-    size: 2048
+    algorithm: ECDSA
+    size: 256
     rotationPolicy: Always
   issuerRef:
     name: vault-server-clusterissuer
@@ -47,8 +47,8 @@ spec:
   usages:
     - client auth
   privateKey:
-    algorithm: RSA
-    size: 2048
+    algorithm: ECDSA
+    size: 256
     rotationPolicy: Always
   issuerRef:
     name: vault-client-clusterissuer

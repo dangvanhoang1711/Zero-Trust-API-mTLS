@@ -2,8 +2,9 @@ package auth
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -197,10 +198,10 @@ func TestParseClientIdentityFromXFCC_InvalidChain(t *testing.T) {
 	}
 }
 
-func generateTestCA(t *testing.T, commonName string, serial int64) (*x509.Certificate, *rsa.PrivateKey) {
+func generateTestCA(t *testing.T, commonName string, serial int64) (*x509.Certificate, *ecdsa.PrivateKey) {
 	t.Helper()
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate CA key: %v", err)
 	}
@@ -229,10 +230,10 @@ func generateTestCA(t *testing.T, commonName string, serial int64) (*x509.Certif
 	return cert, key
 }
 
-func generateTestClientCert(t *testing.T, commonName string, issuer *x509.Certificate, issuerKey *rsa.PrivateKey, serial int64) (*x509.Certificate, *rsa.PrivateKey) {
+func generateTestClientCert(t *testing.T, commonName string, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey, serial int64) (*x509.Certificate, *ecdsa.PrivateKey) {
 	t.Helper()
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("generate client key: %v", err)
 	}
@@ -243,7 +244,7 @@ func generateTestClientCert(t *testing.T, commonName string, issuer *x509.Certif
 		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    now.Add(-time.Minute),
 		NotAfter:     now.Add(12 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
 

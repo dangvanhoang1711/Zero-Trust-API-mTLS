@@ -38,7 +38,7 @@ def get_token(client_id="demo-client", client_secret="demo-client-secret"):
     return resp.json()["access_token"]
 
 
-def envoy_request(token=None, use_cert=True, wrong_cert=False):
+def envoy_request(token=None, use_cert=True, wrong_cert=False, path="/"):
     cert = None
     if use_cert:
         if wrong_cert:
@@ -50,9 +50,11 @@ def envoy_request(token=None, use_cert=True, wrong_cert=False):
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
+    url = ENVOY_URL.rstrip("/") + "/" + path.lstrip("/")
+
     try:
         resp = requests.get(
-            ENVOY_URL,
+            url,
             cert=cert,
             verify=CA_CERT,
             headers=headers,
@@ -109,6 +111,36 @@ def test_success():
         })
     except Exception as e:
         return jsonify({"test": "Valid mTLS + Token", "error": str(e), "passed": False})
+
+
+@app.route("/api/test/abac-protected-admin")
+def test_abac_protected_admin():
+    try:
+        token = get_token("demo-client", "demo-client-secret")
+        result = envoy_request(token=token, use_cert=True, wrong_cert=False, path="/admin")
+        return jsonify({
+            "test": "ABAC: Deny /admin path",
+            "expect": "403 Forbidden",
+            "result": result,
+            "passed": result["status"] == 403,
+        })
+    except Exception as e:
+        return jsonify({"test": "ABAC: Deny /admin path", "error": str(e), "passed": False})
+
+
+@app.route("/api/test/abac-protected-scope")
+def test_abac_protected_scope():
+    try:
+        token = get_token("demo-client", "demo-client-secret")
+        result = envoy_request(token=token, use_cert=True, wrong_cert=False, path="/protected/test")
+        return jsonify({
+            "test": "ABAC: /protected requires api:read scope",
+            "expect": "403 Forbidden",
+            "result": result,
+            "passed": result["status"] == 403,
+        })
+    except Exception as e:
+        return jsonify({"test": "ABAC: /protected requires api:read scope", "error": str(e), "passed": False})
 
 
 @app.route("/api/test/no-token")

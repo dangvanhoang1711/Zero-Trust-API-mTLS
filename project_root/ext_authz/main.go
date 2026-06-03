@@ -19,6 +19,7 @@ import (
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,8 +27,10 @@ import (
 
 type authzServer struct {
 	authv3.UnimplementedAuthorizationServer
-	jwtVerifier *auth.JWTVerifier
-	replayCache *replayCache
+	jwtVerifier    *auth.JWTVerifier
+	replayCache    *replayCache
+	dpopProofCache *replayCache
+	crlChecker     *auth.CRLChecker
 	requiredScopes   []string
 	configErr        error
 	dpopNonceEnabled bool
@@ -81,6 +84,17 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		return mapAuthErr(err), nil
 	}
 
+	// Step 1b: Check certificate revocation status (CRL)
+	if s.crlChecker != nil {
+		revoked, crlErr := s.crlChecker.IsRevoked(identity.SerialNumber)
+		if crlErr != nil {
+			return deny(http.StatusInternalServerError, fmt.Sprintf("crl check error: %v", crlErr)), nil
+		}
+		if revoked {
+			return deny(http.StatusForbidden, "client certificate has been revoked"), nil
+		}
+	}
+
 	// Step 2: Verify JWT signature and extract claims
 	tokenClaims, err := s.jwtVerifier.VerifyAuthorizationHeader(getHeader(headers, "authorization"))
 	if err != nil {
@@ -107,11 +121,13 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 			requiredNonce = s.currentDPoPNonce()
 		}
 		requestURL := buildRequestURL(httpRequest.GetScheme(), httpRequest.GetHost(), requestPath)
+		rawAccessToken := stripBearerPrefix(getHeader(headers, "authorization"))
 		if err := auth.ValidateDPoPBinding(
 			tokenClaims.CnfJKT,
 			getHeader(headers, "dpop"),
 			requestMethod,
 			requestURL,
+			rawAccessToken,
 			parseDurationEnv("DPoP_MAX_AGE", 2*time.Minute),
 			parseDurationEnv("DPoP_CLOCK_SKEW", 2*time.Second),
 			requiredNonce,
@@ -120,6 +136,12 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		}
 		if s.dpopNonceEnabled {
 			s.rotateDPoPNonce()
+		}
+		dpopProofJTI := extractDPoPProofJTI(getHeader(headers, "dpop"))
+		if strings.TrimSpace(dpopProofJTI) != "" {
+			if err := s.dpopProofCache.MarkIfNew(dpopProofJTI); err != nil {
+				return mapAuthErr(err), nil
+			}
 		}
 	}
 
@@ -232,9 +254,17 @@ func buildAuthzServer(ctx context.Context) *authzServer {
 		policy = auth.NewAllowPolicy()
 	}
 
+	dpopProofTTL := parseDurationEnv("DPoP_PROOF_TTL", 5*time.Minute)
+	dpopProofMax := parseIntEnv("DPoP_PROOF_MAX_ENTRIES", 100000)
+	crlURL := parseStringEnv("CRL_DISTRIBUTION_URL")
+	crlToken := parseStringEnv("VAULT_TOKEN")
+	crlChecker := auth.NewCRLCheckerWithToken(crlURL, crlToken, parseDurationEnv("CRL_REFRESH_INTERVAL", 15*time.Minute))
+
 	return &authzServer{
 		jwtVerifier:      verifier,
 		replayCache:      replay,
+		dpopProofCache:   cache.NewReplayCache(dpopProofTTL, dpopProofMax),
+		crlChecker:       crlChecker,
 		requiredScopes:   requiredScopes,
 		dpopNonceEnabled: dpopNonceEnabled,
 		dpopNonceTTL:     dpopNonceTTL,
@@ -496,4 +526,31 @@ func newReplayCache(ttl time.Duration, maxEntries ...int) *replayCache {
 
 func parseStringEnv(name string) string {
 	return strings.TrimSpace(os.Getenv(name))
+}
+
+func stripBearerPrefix(authHeader string) string {
+	raw := strings.TrimSpace(authHeader)
+	for _, prefix := range []string{"Bearer ", "bearer "} {
+		if strings.HasPrefix(raw, prefix) {
+			return strings.TrimSpace(raw[len(prefix):])
+		}
+	}
+	return ""
+}
+
+func extractDPoPProofJTI(dpopHeader string) string {
+	if strings.TrimSpace(dpopHeader) == "" {
+		return ""
+	}
+	token, _, err := new(jwt.Parser).ParseUnverified(dpopHeader, jwt.MapClaims{})
+	if err != nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	raw, _ := claims["jti"]
+	value, _ := raw.(string)
+	return strings.TrimSpace(value)
 }

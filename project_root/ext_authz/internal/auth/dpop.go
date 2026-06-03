@@ -24,7 +24,7 @@ const (
 	dpopProofType        = "dpop+jwt"
 )
 
-func ValidateDPoPBinding(expectedJKT, dpopHeader, requestMethod, requestURI string, maxAge, clockSkew time.Duration, requiredNonce string) error {
+func ValidateDPoPBinding(expectedJKT, dpopHeader, requestMethod, requestURI string, accessToken string, maxAge, clockSkew time.Duration, requiredNonce string) error {
 	if strings.TrimSpace(expectedJKT) == "" {
 		return unauthorized("missing cnf.jkt binding claim")
 	}
@@ -132,6 +132,30 @@ func ValidateDPoPBinding(expectedJKT, dpopHeader, requestMethod, requestURI stri
 		if !strings.EqualFold(actualNonce, strings.TrimSpace(requiredNonce)) {
 			return forbidden("DPoP proof nonce mismatch")
 		}
+	}
+
+	if err := validateDPoPATH(claims, accessToken); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateDPoPATH(claims jwt.MapClaims, accessToken string) error {
+	if strings.TrimSpace(accessToken) == "" {
+		return nil
+	}
+
+	ath := strings.TrimSpace(stringClaim(claims, "ath"))
+	if ath == "" {
+		return unauthorized("DPoP proof missing ath claim (RFC 9449 §2)")
+	}
+
+	sum := sha256.Sum256([]byte(accessToken))
+	expectedATH := base64.RawURLEncoding.EncodeToString(sum[:])
+
+	if !strings.EqualFold(ath, expectedATH) {
+		return forbidden("DPoP proof ath mismatch (access token hash)")
 	}
 
 	return nil

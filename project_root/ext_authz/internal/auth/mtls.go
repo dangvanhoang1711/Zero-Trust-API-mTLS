@@ -15,9 +15,10 @@ const xfccHeader = "x-forwarded-client-cert"
 const clientCAPathEnv = "CLIENT_CA_BUNDLE"
 
 type ClientIdentity struct {
-	Subject    string
-	SAN        []string
-	Thumbprint string
+	Subject      string
+	SAN          []string
+	Thumbprint   string
+	SerialNumber string
 }
 
 func ParseClientIdentityFromXFCC(rawXFCC string) (*ClientIdentity, error) {
@@ -42,10 +43,16 @@ func ParseClientIdentityFromXFCC(rawXFCC string) (*ClientIdentity, error) {
 		}
 	}
 
+	serialHex := ""
+	if leaf.SerialNumber != nil {
+		serialHex = strings.ToLower(leaf.SerialNumber.Text(16))
+	}
+
 	identity := &ClientIdentity{
-		Subject:    leaf.Subject.String(),
-		SAN:        extractSAN(leaf),
-		Thumbprint: sha256Thumbprint(leaf.Raw),
+		Subject:      leaf.Subject.String(),
+		SAN:          extractSAN(leaf),
+		Thumbprint:   sha256Thumbprint(leaf.Raw),
+		SerialNumber: serialHex,
 	}
 
 	return identity, nil
