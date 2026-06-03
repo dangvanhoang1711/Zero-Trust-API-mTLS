@@ -42,7 +42,7 @@ services:
       REPLAY_REDIS_URL: "${REPLAY_REDIS_URL:-redis://replay-cache:6379/0}"
       REPLAY_REDIS_KEY_PREFIX: "${REPLAY_REDIS_KEY_PREFIX:-zero-trust:replay}"
       CLIENT_CA_BUNDLE: "/etc/ca-bundle/ca-chain.crt"
-      DPoP_REQUIRE_NONCE: "true"
+      DPoP_REQUIRE_NONCE: "false"
       DPoP_MAX_AGE: "2m"
       DPoP_CLOCK_SKEW: "2s"
       DPoP_NONCE_TTL: "5m"
@@ -101,6 +101,23 @@ services:
       - protected-api
     restart: unless-stopped
 
+  dpop-token-proxy:
+    build:
+      context: ./project_root/dpop-token-proxy
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    ports:
+      - "5002:5002"
+    environment:
+      KEYCLOAK_URL: "http://keycloak:8080"
+      PROXY_URL: "http://dpop-token-proxy:5002"
+      KEYCLOAK_ADMIN: "admin"
+      KEYCLOAK_ADMIN_PASSWORD: "admin"
+      DPOP_MAX_AGE_SECONDS: "120"
+      DPOP_CLOCK_SKEW_SECONDS: "5"
+    restart: unless-stopped
+
   dashboard:
     build:
       context: ./project_root/dashboard
@@ -108,6 +125,8 @@ services:
       keycloak:
         condition: service_healthy
       envoy:
+        condition: service_started
+      dpop-token-proxy:
         condition: service_started
     ports:
       - "5000:5000"
@@ -117,6 +136,7 @@ services:
       KEYCLOAK_URL: "http://keycloak:8080"
       ENVOY_URL: "https://envoy:10000"
       DASHBOARD_PORT: "5000"
+      DPOP_PROXY_URL: "http://dpop-token-proxy:5002"
     restart: unless-stopped
 
   vault:

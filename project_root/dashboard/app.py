@@ -1,11 +1,17 @@
 import os
 import json
 import time
+import uuid
+import base64
+import hashlib
 import ssl
 import urllib3
 import subprocess
 from flask import Flask, jsonify, render_template
 import requests
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.hazmat.primitives import hashes
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -38,7 +44,7 @@ def get_token(client_id="demo-client", client_secret="demo-client-secret"):
     return resp.json()["access_token"]
 
 
-def envoy_request(token=None, use_cert=True, wrong_cert=False, path="/"):
+def envoy_request(token=None, use_cert=True, wrong_cert=False, path="/", dpop_proof=None):
     cert = None
     if use_cert:
         if wrong_cert:
@@ -49,6 +55,8 @@ def envoy_request(token=None, use_cert=True, wrong_cert=False, path="/"):
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if dpop_proof:
+        headers["DPoP"] = dpop_proof
 
     url = ENVOY_URL.rstrip("/") + "/" + path.lstrip("/")
 
@@ -67,6 +75,70 @@ def envoy_request(token=None, use_cert=True, wrong_cert=False, path="/"):
         return {"status": "CONN_ERR", "body": None, "error": f"Connection Error: {e}"}
     except Exception as e:
         return {"status": "ERR", "body": None, "error": str(e)}
+
+
+DPOP_PROXY_URL = os.environ.get("DPOP_PROXY_URL", "http://localhost:5002")
+
+
+def b64url(data):
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("utf-8")
+
+
+def ec_key_to_jwk(public_key):
+    pub_nums = public_key.public_numbers()
+    if isinstance(pub_nums.curve, ec.SECP256R1):
+        crv, key_len = "P-256", 32
+    elif isinstance(pub_nums.curve, ec.SECP384R1):
+        crv, key_len = "P-384", 48
+    elif isinstance(pub_nums.curve, ec.SECP521R1):
+        crv, key_len = "P-521", 66
+    else:
+        raise ValueError("unsupported curve")
+    return {
+        "kty": "EC",
+        "crv": crv,
+        "x": b64url(pub_nums.x.to_bytes(key_len, "big")),
+        "y": b64url(pub_nums.y.to_bytes(key_len, "big")),
+    }
+
+
+def compute_jkt(jwk):
+    canonical = json.dumps(
+        {"crv": jwk["crv"], "kty": "EC", "x": jwk["x"], "y": jwk["y"]},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return b64url(hashlib.sha256(canonical.encode("utf-8")).digest())
+
+
+def create_dpop_proof(private_key, htm, htu, jti=None, iat=None, ath=None, nonce=None):
+    if jti is None:
+        jti = str(uuid.uuid4())
+    if iat is None:
+        iat = int(time.time())
+
+    jwk = ec_key_to_jwk(private_key.public_key())
+
+    header = {"typ": "dpop+jwt", "alg": "ES256", "jwk": jwk}
+    payload = {"htm": htm, "htu": htu, "jti": jti, "iat": iat}
+
+    if ath:
+        payload["ath"] = ath
+    if nonce:
+        payload["nonce"] = nonce
+
+    header_b64 = b64url(json.dumps(header, separators=(",", ":")))
+    payload_b64 = b64url(json.dumps(payload, separators=(",", ":")))
+    signing_input = f"{header_b64}.{payload_b64}"
+
+    sig_der = private_key.sign(signing_input.encode(), ec.ECDSA(hashes.SHA256()))
+    r, s = decode_dss_signature(sig_der)
+    key_len = private_key.curve.key_size // 8
+    sig_b64 = b64url(r.to_bytes(key_len, "big") + s.to_bytes(key_len, "big"))
+
+    return f"{signing_input}.{sig_b64}"
 
 
 @app.route("/")
@@ -94,6 +166,12 @@ def api_status():
         services["ext_authz"] = {"status": "unknown"}
     except:
         services["ext_authz"] = {"status": "ok", "note": "gRPC port open"}
+
+    try:
+        r = requests.get(f"{DPOP_PROXY_URL.rstrip('/')}/health", timeout=5)
+        services["dpop_proxy"] = {"status": "ok" if r.ok else "error", "code": r.status_code}
+    except Exception as e:
+        services["dpop_proxy"] = {"status": "error", "error": str(e)[:100]}
 
     return jsonify(services)
 
@@ -216,6 +294,74 @@ def test_no_mtls():
         })
     except Exception as e:
         return jsonify({"test": "Request without mTLS client cert", "error": str(e), "passed": False})
+
+
+@app.route("/api/test/dpop")
+def test_dpop():
+    try:
+        key = ec.generate_private_key(ec.SECP256R1())
+        pub = key.public_key()
+        jwk = ec_key_to_jwk(pub)
+        jkt = compute_jkt(jwk)
+
+        proxy_token_url = f"{DPOP_PROXY_URL.rstrip('/')}/token"
+        proof = create_dpop_proof(key, "POST", proxy_token_url)
+
+        proxy_resp = requests.post(
+            proxy_token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": "demo-client-dpop",
+                "client_secret": "demo-client-dpop-secret",
+            },
+            headers={"DPoP": proof},
+            timeout=15,
+        )
+
+        proxy_result = {
+            "status": proxy_resp.status_code,
+            "body": proxy_resp.text[:500] if proxy_resp.text else "",
+        }
+
+        if proxy_resp.status_code != 200:
+            return jsonify({
+                "test": "DPoP Token Proxy → Envoy",
+                "expect": "200 from proxy, then 200 from envoy",
+                "proxy_result": proxy_result,
+                "result": None,
+                "passed": False,
+            })
+
+        token_data = proxy_resp.json()
+        access_token = token_data.get("access_token", "")
+        if not access_token:
+            return jsonify({
+                "test": "DPoP Token Proxy → Envoy",
+                "expect": "access_token in response",
+                "proxy_result": proxy_result,
+                "result": None,
+                "passed": False,
+            })
+
+        token_hash = b64url(hashlib.sha256(access_token.encode("utf-8")).digest())
+        dpop_proof = create_dpop_proof(key, "GET", ENVOY_URL.rstrip("/") + "/", ath=token_hash)
+
+        envoy_result = envoy_request(token=access_token, use_cert=True, wrong_cert=False, dpop_proof=dpop_proof)
+
+        return jsonify({
+            "test": "DPoP Token Proxy → Envoy",
+            "expect": "200 from proxy, then 200 from envoy",
+            "jkt": jkt,
+            "proxy_result": proxy_result,
+            "envoy_result": envoy_result,
+            "passed": proxy_resp.status_code == 200 and envoy_result["status"] == 200,
+        })
+    except Exception as e:
+        return jsonify({
+            "test": "DPoP Token Proxy → Envoy",
+            "error": str(e),
+            "passed": False,
+        })
 
 
 if __name__ == "__main__":
