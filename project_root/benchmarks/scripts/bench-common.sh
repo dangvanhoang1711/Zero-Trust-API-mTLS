@@ -4,7 +4,7 @@ set -euo pipefail
 
 : "${BASE_URL:=https://localhost:10000/}"
 : "${PROJECT_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
 : "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
 : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 : "${REQUESTS:=200}"

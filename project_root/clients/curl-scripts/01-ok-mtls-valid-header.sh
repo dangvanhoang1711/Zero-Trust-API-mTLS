@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
 : "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
 : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 

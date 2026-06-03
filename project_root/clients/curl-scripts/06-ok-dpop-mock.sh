@@ -8,8 +8,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000}"
-: "${DPoP_TARGET_PATH:=/protected}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client.crt}"
+: "${DPoP_TARGET_PATH:=/}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
 : "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
 : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 : "${DPOP_PRIVATE_KEY:=$PROJECT_ROOT/clients/keys/dpop-mock/dpop-mock-private.pem}"
@@ -21,7 +21,7 @@ wait_for_keycloak
 token=$(get_access_token "demo-client-dpop")
 
 target_url="${BASE_URL%/}${DPoP_TARGET_PATH}"
-dpop=$(python3 - "$DPOP_PRIVATE_KEY" "$DPOP_JWK_PATH" "$target_url" <<'PY'
+dpop=$(python3 - "$DPOP_PRIVATE_KEY" "$DPOP_JWK_PATH" "$target_url" "$token" <<'PY'
 import base64
 import hashlib
 import json
@@ -34,7 +34,7 @@ from urllib.parse import urlparse
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-private_key_path, jwk_path, target_url = sys.argv[1:4]
+private_key_path, jwk_path, target_url, access_token = sys.argv[1:5]
 
 with open(jwk_path, "r", encoding="utf-8") as fp:
     jwk = json.load(fp)
@@ -57,11 +57,14 @@ header = {
     "jwk": jwk,
 }
 
+ath = base64.urlsafe_b64encode(hashlib.sha256(access_token.encode()).digest()).rstrip(b"=").decode("ascii")
+
 claims = {
     "htu": htu,
     "htm": "GET",
     "jti": uuid.uuid4().hex,
     "iat": int(time.time()),
+    "ath": ath,
 }
 
 def b64url(value: bytes) -> str:

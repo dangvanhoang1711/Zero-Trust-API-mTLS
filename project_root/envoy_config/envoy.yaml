@@ -63,7 +63,7 @@ static_resources:
                       filename: /etc/envoy/tls/tls.key
                 validation_context:
                   trusted_ca:
-                    filename: /etc/envoy/tls/trust/root-ca.crt
+                    filename: /etc/envoy/tls/trust/intermediate-ca.crt
           filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:

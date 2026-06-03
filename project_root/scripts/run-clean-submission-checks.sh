@@ -39,7 +39,7 @@ wait_for_envoy() {
 
   for _ in $(seq 1 60); do
     if curl --silent --show-error --fail \
-      --cert "$PROJECT_ROOT/infra/certs/client.crt" \
+      --cert "$PROJECT_ROOT/infra/certs/client-chain.crt" \
       --key "$PROJECT_ROOT/infra/certs/client.key" \
       --cacert "$PROJECT_ROOT/infra/certs/root-ca.crt" \
       -H "x-test-auth: ok" \

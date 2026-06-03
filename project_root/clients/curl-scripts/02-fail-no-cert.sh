@@ -17,7 +17,7 @@ wait_for_keycloak
 status_code=$(curl --silent --show-error \
   --output /tmp/zt_case2.out \
   --write-out "%{http_code}" \
-  --cert "$PROJECT_ROOT/infra/certs/client.crt" \
+  --cert "$PROJECT_ROOT/infra/certs/client-chain.crt" \
   --key "$PROJECT_ROOT/infra/certs/client.key" \
   --cacert "$CA_CERT" \
   "$BASE_URL")

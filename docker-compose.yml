@@ -4,11 +4,17 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     command: ["start-dev", "--import-realm"]
+    mem_limit: 512m
+    mem_reservation: 256m
     environment:
       KEYCLOAK_ADMIN: "admin"
       KEYCLOAK_ADMIN_PASSWORD: "admin"
       KC_DB: "dev-file"
       KC_HOSTNAME: "http://keycloak:8080"
+      KC_CACHE: "local"
+      JAVA_OPTS_APPEND: >-
+        -Xms64m -Xmx256m
+        -XX:MaxMetaspaceSize=192m
     volumes:
       - ./project_root/infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     ports:
@@ -16,10 +22,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/master/ HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && grep -q '200 OK' <&3"]
-      interval: 15s
+      interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   ext_authz:
     build:

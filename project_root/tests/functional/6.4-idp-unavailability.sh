@@ -10,7 +10,7 @@ DOCKER_COMPOSE_FILE="$REPO_ROOT/../docker-compose.yml"
 source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
 : "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
 : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 : "${KEYCLOAK_OUTAGE_WAIT_SECONDS:=8}"
