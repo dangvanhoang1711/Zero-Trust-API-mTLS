@@ -182,8 +182,9 @@ services:
       pip3 install --no-cache-dir requests -q &&
       echo '>>> Initializing PKI...' &&
       bash /workspace/project_root/infra/vault/gen-pki-vault.sh &&
-      echo '>>> Reloading Envoy...' &&
-      docker kill -s HUP zero-trust-mvp-envoy-1 2>/dev/null || true &&
-      echo '>>> PKI initialization complete'
+      echo '>>> Restarting services to pick up new certs...' &&
+      docker restart zero-trust-mvp-envoy-1 2>/dev/null || echo '  (envoy will start fresh with new certs)' &&
+      docker restart zero-trust-mvp-ext_authz-1 2>/dev/null || echo '  (ext_authz will start fresh with new certs)' &&
+      echo '>>> PKI initialization complete - system ready for demo'
       "
     restart: "no"
