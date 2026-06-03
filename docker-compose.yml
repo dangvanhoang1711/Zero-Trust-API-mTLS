@@ -171,6 +171,7 @@ services:
     environment:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: root
+      KEYCLOAK_URL: http://keycloak:8080
     volumes:
       - ./project_root:/workspace/project_root
       - /var/run/docker.sock:/var/run/docker.sock

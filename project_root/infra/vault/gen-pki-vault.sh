@@ -182,37 +182,37 @@ echo "  Client chain: $PKI_DIR/client-chain.crt"
 
 echo ""
 echo "=== 9. Deploy to target locations ==="
-cp "$PKI_DIR/server-chain.crt" "$ENVOY_TLS_DIR/tls.crt"
+cat "$PKI_DIR/server-chain.crt" > "$ENVOY_TLS_DIR/tls.crt"
 echo "  -> $ENVOY_TLS_DIR/tls.crt  (server + issuing CA chain)"
 
-cp "$PKI_DIR/server.key" "$ENVOY_TLS_DIR/tls.key"
+cat "$PKI_DIR/server.key" > "$ENVOY_TLS_DIR/tls.key"
 echo "  -> $ENVOY_TLS_DIR/tls.key"
 
-cp "$PKI_DIR/root-ca.crt" "$ENVOY_TRUST_DIR/root-ca.crt"
+cat "$PKI_DIR/root-ca.crt" > "$ENVOY_TRUST_DIR/root-ca.crt"
 echo "  -> $ENVOY_TRUST_DIR/root-ca.crt  (Root CA trust anchor for Envoy)"
 
-cp "$PKI_DIR/ca-chain.crt" "$ENVOY_TRUST_DIR/intermediate-ca.crt"
+cat "$PKI_DIR/ca-chain.crt" > "$ENVOY_TRUST_DIR/intermediate-ca.crt"
 echo "  -> $ENVOY_TRUST_DIR/intermediate-ca.crt  (CA chain for mTLS client verification)"
 
-cp "$PKI_DIR/client-chain.crt" "$CERTS_DIR/client-chain.crt"
+cat "$PKI_DIR/client-chain.crt" > "$CERTS_DIR/client-chain.crt"
 echo "  -> $CERTS_DIR/client-chain.crt  (client cert + issuing CA for --cert)"
 
-cp "$PKI_DIR/client.crt" "$CERTS_DIR/client.crt"
+cat "$PKI_DIR/client.crt" > "$CERTS_DIR/client.crt"
 echo "  -> $CERTS_DIR/client.crt  (leaf only)"
 
-cp "$PKI_DIR/client.key" "$CERTS_DIR/client.key"
+cat "$PKI_DIR/client.key" > "$CERTS_DIR/client.key"
 echo "  -> $CERTS_DIR/client.key"
 
-cp "$PKI_DIR/root-ca.crt" "$CERTS_DIR/root-ca.crt"
+cat "$PKI_DIR/root-ca.crt" > "$CERTS_DIR/root-ca.crt"
 echo "  -> $CERTS_DIR/root-ca.crt  (trust anchor)"
 
-cp "$PKI_DIR/server-chain.crt" "$CERTS_DIR/server-chain.crt"
+cat "$PKI_DIR/server-chain.crt" > "$CERTS_DIR/server-chain.crt"
 echo "  -> $CERTS_DIR/server-chain.crt"
 
-cp "$PKI_DIR/issuing-ca.crt" "$CERTS_DIR/intermediate-ca.crt"
+cat "$PKI_DIR/issuing-ca.crt" > "$CERTS_DIR/intermediate-ca.crt"
 echo "  -> $CERTS_DIR/intermediate-ca.crt  (issuing CA for client verification)"
 
-cp "$PKI_DIR/ca-chain.crt" "$CERTS_DIR/ca-chain.crt"
+cat "$PKI_DIR/ca-chain.crt" > "$CERTS_DIR/ca-chain.crt"
 echo "  -> $CERTS_DIR/ca-chain.crt  (full CA chain for ext_authz trust bundle)"
 
 echo ""

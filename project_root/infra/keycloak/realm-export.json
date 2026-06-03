@@ -48,7 +48,7 @@
           "consentRequired": false,
           "config": {
             "claim.name": "cnf",
-            "claim.value": "{\"x5t#S256\":\"ab57393d0c12519988a0ed497ffccf5c493d1097309c299998b5a5e4b27975b4\"}",
+            "claim.value": "{\"x5t#S256\":\"bdd54cb0c9fe71935b495cff8e429b3b169153aff3214fa4749cf7200103477d\"}",
             "jsonType.label": "JSON",
             "id.token.claim": "false",
             "access.token.claim": "true",
