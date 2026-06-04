@@ -29,7 +29,7 @@ services:
     image: envoyproxy/envoy:v1.31-latest
     ports:
       - "443:10000"
-      - "80:10002"
+      - "80:10001"
     volumes:
       - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
       - ../../envoy/certs:/etc/envoy/certs

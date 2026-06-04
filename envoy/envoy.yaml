@@ -1,21 +1,30 @@
 static_resources:
   listeners:
-    - name: http_listener
+    - name: baseline_https_listener
       address:
         socket_address:
           address: 0.0.0.0
-          port_value: 10002
+          port_value: 10001
       filter_chains:
-        - filters:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/certs/tls.crt
+                    private_key:
+                      filename: /etc/envoy/certs/tls.key
+          filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: http_ingress
-                codec_type: AUTO
+                stat_prefix: baseline_https
                 route_config:
-                  name: http_route
+                  name: baseline_route
                   virtual_hosts:
-                    - name: http_backend
+                    - name: baseline_backend
                       domains: ["*"]
                       routes:
                         - match:
