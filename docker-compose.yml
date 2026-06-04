@@ -27,7 +27,7 @@ services:
       retries: 5
       start_period: 60s
 
-  ext_authz:
+  ext-authz:
     build:
       context: ./project_root/ext_authz
     depends_on:
@@ -57,9 +57,12 @@ services:
       CRL_DISTRIBUTION_URL: "http://vault:8200/v1/pki-int/crl/pem"
       CRL_REFRESH_INTERVAL: "15m"
       VAULT_TOKEN: "root"
+      TLS_CERT_FILE: /etc/internal-tls/tls.crt
+      TLS_KEY_FILE: /etc/internal-tls/tls.key
     volumes:
       - ./project_root/infra/certs/ca-chain.crt:/etc/ca-bundle/ca-chain.crt:ro
       - ./project_root/ext_authz/config:/etc/ext-authz/config:ro
+      - ./project_root/envoy_config/tls:/etc/internal-tls:ro
     expose:
       - "50051"
     restart: unless-stopped
@@ -78,6 +81,11 @@ services:
       context: ./project_root/infra/services/echo
     expose:
       - "8080"
+    environment:
+      TLS_CERT_FILE: /etc/internal-tls/tls.crt
+      TLS_KEY_FILE: /etc/internal-tls/tls.key
+    volumes:
+      - ./project_root/envoy_config/tls:/etc/internal-tls:ro
     restart: unless-stopped
 
   protected-api:
@@ -85,6 +93,11 @@ services:
       context: ./project_root/infra/services/protected-api
     expose:
       - "8080"
+    environment:
+      TLS_CERT_FILE: /etc/internal-tls/tls.crt
+      TLS_KEY_FILE: /etc/internal-tls/tls.key
+    volumes:
+      - ./project_root/envoy_config/tls:/etc/internal-tls:ro
     restart: unless-stopped
 
   envoy:
@@ -102,7 +115,7 @@ services:
       - "10001:10001"
       - "10000:10000"
     depends_on:
-      - ext_authz
+      - ext-authz
       - backend
       - protected-api
     restart: unless-stopped
@@ -186,7 +199,9 @@ services:
       bash /workspace/project_root/infra/vault/gen-pki-vault.sh &&
       echo '>>> Restarting services to pick up new certs...' &&
       docker restart zero-trust-mvp-envoy-1 2>/dev/null || echo '  (envoy will start fresh with new certs)' &&
-      docker restart zero-trust-mvp-ext_authz-1 2>/dev/null || echo '  (ext_authz will start fresh with new certs)' &&
+      docker restart zero-trust-mvp-ext-authz-1 2>/dev/null || echo '  (ext-authz will start fresh with new certs)' &&
+      docker restart zero-trust-mvp-backend-1 2>/dev/null || echo '  (backend will start fresh with new certs)' &&
+      docker restart zero-trust-mvp-protected-api-1 2>/dev/null || echo '  (protected-api will start fresh with new certs)' &&
       echo '>>> PKI initialization complete - system ready for demo'
       "
     restart: "no"

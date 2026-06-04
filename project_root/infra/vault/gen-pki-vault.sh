@@ -124,7 +124,7 @@ echo ""
 echo "=== 5. Issue server cert (CN=localhost) ==="
 VAULT write -format=json pki-int/issue/server-cert \
   common_name="localhost" \
-  alt_names="localhost,envoy,envoy-service.default.svc.cluster.local${CERT_SAN_DNS:+,$CERT_SAN_DNS}" \
+  alt_names="localhost,envoy,backend,protected-api,ext-authz,envoy-service.default.svc.cluster.local${CERT_SAN_DNS:+,$CERT_SAN_DNS}" \
   ip_sans="127.0.0.1${CERT_SAN_IP:+,$CERT_SAN_IP}" \
   ttl=730h > "$PKI_DIR/server.json"
 

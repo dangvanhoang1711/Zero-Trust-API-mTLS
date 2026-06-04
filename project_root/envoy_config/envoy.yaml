@@ -108,6 +108,14 @@ static_resources:
       type: STRICT_DNS
       connect_timeout: 0.5s
       http2_protocol_options: {}
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/tls/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: ext_authz_service
         endpoints:
@@ -115,12 +123,20 @@ static_resources:
               - endpoint:
                   address:
                     socket_address:
-                      address: ext_authz
+                      address: ext-authz
                       port_value: 50051
 
     - name: backend_service
       type: STRICT_DNS
       connect_timeout: 0.5s
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/tls/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: backend_service
         endpoints:
@@ -134,6 +150,14 @@ static_resources:
     - name: protected_api_service
       type: STRICT_DNS
       connect_timeout: 0.5s
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/tls/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: protected_api_service
         endpoints:

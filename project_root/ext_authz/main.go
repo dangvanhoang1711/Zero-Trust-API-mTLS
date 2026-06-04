@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
@@ -53,12 +55,30 @@ func main() {
 		log.Fatalf("listen failed: %v", err)
 	}
 
+	tlsCertFile := os.Getenv("TLS_CERT_FILE")
+	if tlsCertFile == "" {
+		tlsCertFile = "/etc/internal-tls/tls.crt"
+	}
+	tlsKeyFile := os.Getenv("TLS_KEY_FILE")
+	if tlsKeyFile == "" {
+		tlsKeyFile = "/etc/internal-tls/tls.key"
+	}
+
+	cert, err := tls.LoadX509KeyPair(tlsCertFile, tlsKeyFile)
+	if err != nil {
+		log.Fatalf("failed to load TLS cert: %v", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}
+
 	server := buildAuthzServer(context.Background())
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpc.Creds(credentials.NewTLS(tlsConfig)))
 	authv3.RegisterAuthorizationServer(grpcServer, server)
 
-	log.Printf("ext_authz gRPC server listening on :%s", port)
+	log.Printf("ext_authz gRPC server listening on :%s (TLS)", port)
 	if err := grpcServer.Serve(listener); err != nil {
 		log.Fatalf("grpc server failed: %v", err)
 	}

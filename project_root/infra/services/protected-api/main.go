@@ -49,8 +49,17 @@ func main() {
 		}
 	})
 
-	log.Printf("protected API service listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
+	tlsCertFile := os.Getenv("TLS_CERT_FILE")
+	if tlsCertFile == "" {
+		tlsCertFile = "/etc/internal-tls/tls.crt"
+	}
+	tlsKeyFile := os.Getenv("TLS_KEY_FILE")
+	if tlsKeyFile == "" {
+		tlsKeyFile = "/etc/internal-tls/tls.key"
+	}
+
+	log.Printf("protected API service listening on :%s (TLS)", port)
+	if err := http.ListenAndServeTLS(":"+port, tlsCertFile, tlsKeyFile, mux); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}
 }
