@@ -5,18 +5,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-: "${KEYCLOAK_BASE_URL:=http://localhost:18080}"
+: "${KEYCLOAK_BASE_URL:=https://localhost:18080}"
 : "${KEYCLOAK_REALM:=zero-trust}"
 : "${DEMO_CLIENT_SECRET:=demo-client-secret}"
 : "${DEMO_MISMATCH_CLIENT_SECRET:=demo-client-mismatch-secret}"
 : "${DEMO_DPOP_CLIENT_SECRET:=demo-client-dpop-secret}"
 : "${KEYCLOAK_CONNECT_TIMEOUT:=3}"
 : "${KEYCLOAK_MAX_TIME:=8}"
+: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
 
 wait_for_keycloak() {
   local config_url="$KEYCLOAK_BASE_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration"
   for _ in $(seq 1 120); do
-    if curl --silent --show-error --fail "$config_url" >/dev/null 2>&1; then
+    if curl --silent --show-error --fail --cacert "$CA_CERT" "$config_url" >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -52,6 +53,7 @@ get_access_token() {
     --header "Content-Type: application/x-www-form-urlencoded" \
     --connect-timeout "$KEYCLOAK_CONNECT_TIMEOUT" \
     --max-time "$KEYCLOAK_MAX_TIME" \
+    --cacert "$CA_CERT" \
     --data-urlencode "grant_type=client_credentials" \
     --data-urlencode "client_id=$client_id" \
     --data-urlencode "client_secret=$client_secret" \

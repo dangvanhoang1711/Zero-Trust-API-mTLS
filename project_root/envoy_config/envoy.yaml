@@ -40,6 +40,46 @@ static_resources:
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
 
+    - name: keycloak_tls_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 18080
+      listener_filters:
+        - name: envoy.filters.listener.tls_inspector
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /etc/envoy/tls/tls.crt
+                    private_key:
+                      filename: /etc/envoy/tls/tls.key
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: keycloak_http
+                route_config:
+                  name: keycloak_route
+                  virtual_hosts:
+                    - name: keycloak_backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: keycloak_service
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
     - name: https_listener
       address:
         socket_address:
@@ -166,6 +206,19 @@ static_resources:
                   address:
                     socket_address:
                       address: protected-api
+                      port_value: 8080
+
+    - name: keycloak_service
+      type: STRICT_DNS
+      connect_timeout: 0.5s
+      load_assignment:
+        cluster_name: keycloak_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: keycloak
                       port_value: 8080
 
 admin:
