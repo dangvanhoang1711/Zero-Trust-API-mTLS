@@ -237,4 +237,55 @@ python3 "$SCRIPT_DIR/update_keycloak_thumbprint.py" "$THUMBPRINT" && \
   echo "  WARN: Keycloak update failed. Update manually in realm-export.json"
 
 echo ""
+echo "=== 13. Configure Keycloak to use ES256 (ECDSA) signing ==="
+ADMIN_TOKEN=$(curl -sf -X POST "http://keycloak:8080/realms/master/protocol/openid-connect/token" \
+  -d "grant_type=password&client_id=admin-cli&username=${KEYCLOAK_ADMIN:-admin}&password=${KEYCLOAK_ADMIN_PASSWORD:-admin}" \
+  2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
+
+if [ -n "$ADMIN_TOKEN" ]; then
+  # Check if ECDSA key provider already exists
+  EC_KEY_EXISTS=$(curl -sf -X GET "http://keycloak:8080/admin/realms/zero-trust/components?name=ecdsa-generated" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" 2>/dev/null | python3 -c "import json,sys;print(len(json.load(sys.stdin))>0)" 2>/dev/null || echo "false")
+
+  if [ "$EC_KEY_EXISTS" != "True" ]; then
+    echo "  Creating ECDSA key provider..."
+    curl -sf -X POST "http://keycloak:8080/admin/realms/zero-trust/components" \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "ecdsa-generated",
+        "providerId": "ecdsa-generated",
+        "providerType": "org.keycloak.keys.KeyProvider",
+        "parentId": "zero-trust",
+        "config": {
+          "priority": ["100"],
+          "algorithm": ["ES256"],
+          "ecdsaEllipticCurveKey": ["P-256"],
+          "enabled": ["true"],
+          "active": ["true"]
+        }
+      }' > /dev/null 2>&1 && echo "  ECDSA key provider created" || echo "  WARN: Failed to create ECDSA key provider"
+  else
+    echo "  ECDSA key provider already exists"
+  fi
+
+  echo "  Setting defaultSignatureAlgorithm to ES256..."
+  REALM_CONFIG=$(curl -sf -X GET "http://keycloak:8080/admin/realms/zero-trust" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" 2>/dev/null)
+  if [ -n "$REALM_CONFIG" ]; then
+    echo "$REALM_CONFIG" | python3 -c "
+import json,sys
+data = json.load(sys.stdin)
+data['defaultSignatureAlgorithm'] = 'ES256'
+print(json.dumps(data))
+" | curl -sf -X PUT "http://keycloak:8080/admin/realms/zero-trust" \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d @- > /dev/null 2>&1 && echo "  defaultSignatureAlgorithm set to ES256" || echo "  WARN: Failed to set ES256"
+  fi
+else
+  echo "  WARN: Cannot get admin token — ES256 config skipped"
+fi
+
+echo ""
 echo "=== Vault PKI generation complete! ==="

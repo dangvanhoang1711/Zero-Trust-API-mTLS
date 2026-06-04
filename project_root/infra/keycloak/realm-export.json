@@ -2,6 +2,7 @@
   "realm": "zero-trust",
   "enabled": true,
   "sslRequired": "none",
+  "defaultSignatureAlgorithm": "ES256",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -48,7 +49,7 @@
           "consentRequired": false,
           "config": {
             "claim.name": "cnf",
-            "claim.value": "{\"x5t#S256\":\"f810554b498c40df1006e847115337c1c5f611cf670d59fe5bc0706669c2fa0b\"}",
+            "claim.value": "{\"x5t#S256\":\"4a36ccc4f4412614b2813aa26f82a0b506f1c60b6e56298cd4a3c2ecc9f42922\"}",
             "jsonType.label": "JSON",
             "id.token.claim": "false",
             "access.token.claim": "true",
@@ -149,5 +150,22 @@
         }
       ]
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "ecdsa-generated",
+        "providerId": "ecdsa-generated",
+        "subType": "default",
+        "config": {
+          "priority": ["100"],
+          "algorithm": ["ES256"],
+          "ecdsaEllipticCurveKey": ["P-256"],
+          "maxIterationCount": ["1"],
+          "enabled": ["true"],
+          "active": ["true"]
+        }
+      }
+    ]
+  }
 }

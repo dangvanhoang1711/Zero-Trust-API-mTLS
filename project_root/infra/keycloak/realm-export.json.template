@@ -2,6 +2,7 @@
   "realm": "zero-trust",
   "enabled": true,
   "sslRequired": "none",
+  "defaultSignatureAlgorithm": "ES256",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
@@ -149,5 +150,22 @@
         }
       ]
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "ecdsa-generated",
+        "providerId": "ecdsa-generated",
+        "subType": "default",
+        "config": {
+          "priority": ["100"],
+          "algorithm": ["ES256"],
+          "ecdsaEllipticCurveKey": ["P-256"],
+          "maxIterationCount": ["1"],
+          "enabled": ["true"],
+          "active": ["true"]
+        }
+      }
+    ]
+  }
 }
