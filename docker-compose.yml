@@ -54,7 +54,7 @@ services:
       DPoP_NONCE_TTL: "5m"
       DPoP_PROOF_TTL: "5m"
       DPoP_PROOF_MAX_ENTRIES: "100000"
-      CRL_DISTRIBUTION_URL: "http://vault:8200/v1/pki-int/crl"
+      CRL_DISTRIBUTION_URL: "http://vault:8200/v1/pki-int/crl/pem"
       CRL_REFRESH_INTERVAL: "15m"
       VAULT_TOKEN: "root"
     volumes:
