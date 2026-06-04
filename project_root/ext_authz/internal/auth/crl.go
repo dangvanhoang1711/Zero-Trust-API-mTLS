@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -117,6 +118,11 @@ func (c *CRLChecker) fetchCRL() (*x509.RevocationList, error) {
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	block, _ := pem.Decode(raw)
+	if block != nil {
+		raw = block.Bytes
 	}
 
 	crl, err := x509.ParseRevocationList(raw)
