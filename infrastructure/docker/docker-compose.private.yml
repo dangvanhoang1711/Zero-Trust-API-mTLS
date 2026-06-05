@@ -7,7 +7,7 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
       KC_HTTP_RELATIVE_PATH: "/"
-      KC_HOSTNAME: "localhost"
+      KC_HOSTNAME: "keycloak"
       JAVA_OPTS: "-Xms64m -Xmx384m -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m"
     volumes:
       - ../../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
@@ -75,8 +75,10 @@ services:
     environment:
       KEYCLOAK_URL: "http://keycloak:8080"
       KEYCLOAK_REALM: "zero-trust"
+      JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
+      JWT_AUDIENCE: "api-gateway"
       REDIS_URL: "redis://redis:6379"
-      AUTHZ_POLICY_PATH: "/etc/ext-authz/config/authz-policy.yaml"
+      AUTHZ_POLICY_FILE: "/etc/ext-authz/config/authz-policy.yaml"
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
       LISTEN_ADDR: "0.0.0.0:50051"
@@ -116,6 +118,16 @@ services:
         set -e
         apk add --no-cache python3 openssl > /dev/null 2>&1
 
+        echo "=== PKI Init: check existing certs ==="
+        if [ -f /certs/tls.crt ] && [ -f /certs/client.crt ] && [ -f /certs/ca-chain.crt ]; then
+          cat /certs/intermediate-ca.crt /certs/root-ca.crt > /tmp/_check_chain.crt 2>/dev/null || true
+          if openssl verify -CAfile /tmp/_check_chain.crt /certs/tls.crt > /dev/null 2>&1; then
+            echo "Certs valid, skipping regeneration"
+            exit 0
+          fi
+        fi
+        echo "Regenerating certs..."
+
         echo "=== PKI Init: wait for Vault ==="
         for try in 1 2 3 4 5 6 7 8 9 10; do
           if vault status > /dev/null 2>&1; then
@@ -131,6 +143,7 @@ services:
         vault secrets tune -max-lease-ttl=87600h pki-root
 
         vault write -field=certificate pki-root/root/generate/internal common_name="Zero Trust Root CA" ttl=87600h > /certs/root-ca.crt
+        echo "" >> /certs/root-ca.crt
 
         vault secrets disable pki-int 2>/dev/null || true
         vault secrets enable -path=pki-int pki
@@ -142,11 +155,12 @@ services:
 
         vault write -format=json pki-root/root/sign-intermediate csr=@/tmp/int.csr format=pem_bundle ttl=43800h > /tmp/int-signed.json
 
-        python3 -c "import json;d=json.load(open(\"/tmp/int-signed.json\"));print(d[\"data\"][\"certificate\"])" > /tmp/int.crt
+        python3 -c "import json,sys;d=json.load(open(\"/tmp/int-signed.json\"));p=d[\"data\"][\"certificate\"];print(p[:p.find(\"END CERTIFICATE\")+len(\"END CERTIFICATE-----\")])" > /tmp/int.crt
 
         vault write pki-int/intermediate/set-signed certificate=@/tmp/int.crt
 
-        cat /certs/root-ca.crt > /certs/ca-chain.crt
+        cp /certs/root-ca.crt /certs/ca-chain.crt
+        echo "" >> /certs/ca-chain.crt
         cat /tmp/int.crt >> /certs/ca-chain.crt
         cp /tmp/int.crt /certs/intermediate-ca.crt
         mkdir -p /certs/trust
@@ -163,7 +177,8 @@ services:
         python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"certificate\"])" > /certs/tls.crt
         python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"private_key\"])" > /certs/tls.key
 
-        cat /certs/tls.crt > /certs/server-chain.crt
+        cp /certs/tls.crt /certs/server-chain.crt
+        echo "" >> /certs/server-chain.crt
         cat /tmp/int.crt >> /certs/server-chain.crt
 
         echo "=== PKI Init: client cert ==="
@@ -171,6 +186,10 @@ services:
 
         python3 -c "import json;d=json.load(open(\"/tmp/client.json\"));print(d[\"data\"][\"certificate\"])" > /certs/client.crt
         python3 -c "import json;d=json.load(open(\"/tmp/client.json\"));print(d[\"data\"][\"private_key\"])" > /certs/client.key
+
+        echo "=== PKI Init: fix permissions ==="
+        chmod 644 /certs/*.crt /certs/*.key 2>/dev/null || true
+        chmod 644 /certs/trust/*.crt 2>/dev/null || true
 
         echo "=== PKI Init Complete ==="
       '

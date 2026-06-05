@@ -52,12 +52,9 @@ func (v *JWTVerifier) VerifyAuthorizationHeader(authzHeader string) (*TokenClaim
 		return nil, unauthorized("invalid token")
 	}
 
-	cnfX5T, errX5T := extractCNFThumbprint(claims)
-	cnfJKT, errJKT := extractCNFJWKThumbprint(claims)
-	cnfJWK, errJWK := extractCNFJWK(claims)
-	if errX5T != nil && errJKT != nil && errJWK != nil {
-		return nil, forbidden("missing cnf.x5t#S256, cnf.jkt, or cnf.jwk")
-	}
+	cnfX5T, _ := extractCNFThumbprint(claims)
+	cnfJKT, _ := extractCNFJWKThumbprint(claims)
+	cnfJWK, _ := extractCNFJWK(claims)
 
 	subject := stringClaim(claims, "sub")
 	if strings.TrimSpace(subject) == "" {

@@ -95,12 +95,14 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 	httpRequest := req.GetAttributes().GetRequest().GetHttp()
 
 	if s.configErr != nil {
+		log.Printf("CONFIG ERROR: %v", s.configErr)
 		return deny(http.StatusUnauthorized, "authorization service configuration error"), nil
 	}
 
 	// Step 1: Extract and validate client certificate from mTLS handshake
 	identity, err := auth.ParseClientIdentityFromXFCC(getHeader(headers, "x-forwarded-client-cert"))
 	if err != nil {
+		log.Printf("AUTH DENY (step1 cert): %v", err)
 		return mapAuthErr(err), nil
 	}
 
@@ -438,13 +440,16 @@ func newDPoPNonce() string {
 func mapAuthErr(err error) *authv3.CheckResponse {
 	authErr, ok := err.(*auth.AuthError)
 	if !ok {
+		log.Printf("AUTH DENY (generic): %v", err)
 		return deny(http.StatusUnauthorized, "unauthorized")
 	}
 
+	log.Printf("AUTH DENY (status=%d): %s", authErr.HTTPStatus, authErr.Message)
 	return deny(authErr.HTTPStatus, authErr.Message)
 }
 
 func deny(httpStatus int, message string) *authv3.CheckResponse {
+	log.Printf("DENY status=%d msg=%q", httpStatus, message)
 	statusCode := codes.Unauthenticated
 	typeCode := typev3.StatusCode_Unauthorized
 

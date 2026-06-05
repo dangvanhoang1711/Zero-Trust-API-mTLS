@@ -4,12 +4,45 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// Operator constants for ABAC conditions.
+const (
+	opAnd        = "and"
+	opOr         = "or"
+	opNot        = "not"
+	opEq         = "eq"
+	opNeq        = "neq"
+	opContains   = "contains"
+	opIn         = "in"
+	opMatches    = "matches"
+	opGt         = "gt"
+	opGte        = "gte"
+	opLt         = "lt"
+	opLte        = "lte"
+	opBetween    = "between"
+	opExists     = "exists"
+	opNotExists  = "not_exists"
+)
+
+// Condition is a recursive tree structure for ABAC evaluation.
+// Leaf conditions must have Fact, Operator, and Value set.
+// Logical conditions (All, Any, Not) contain sub-conditions.
+type Condition struct {
+	All      []Condition `yaml:"all"`
+	Any      []Condition `yaml:"any"`
+	Not      *Condition  `yaml:"not"`
+	Fact     string      `yaml:"fact"`
+	Operator string      `yaml:"operator"`
+	Value    any         `yaml:"value"`
+}
 
 const (
 	defaultPolicyAction      = "allow"
@@ -58,6 +91,7 @@ type PolicyConditions struct {
 	TokenSubjects  []string           `yaml:"token_subjects"`
 	CertSubjects   []string           `yaml:"cert_subjects"`
 	Claims         map[string][]string `yaml:"claims"`
+	Constraint     *Condition         `yaml:"constraint"`
 }
 
 type PolicyRateLimit struct {
@@ -191,21 +225,42 @@ func (cfg *PolicyConfig) Evaluate(req PolicyRequest) PolicyDecision {
 		defaultAction = defaultPolicyAction
 	}
 
-	matchedRule := cfg.matchingRule(req.Path, req.Method)
+	matchingRules := cfg.allMatchingRules(req.Path, req.Method)
 	requiredScopes := make([]string, 0, 8)
 
-	if !applyPolicyRule(defaultAction, cfg.Global, inputClaims, inputIdentity, &decision, &requiredScopes) {
+	if !applyPolicyRule(defaultAction, cfg.Global, inputClaims, inputIdentity, &decision, &requiredScopes, false) {
 		return decision
 	}
 
-	if matchedRule != nil {
+	// Try each matching rule in order. If a rule matches path/method but fails
+	// conditions, continue to the next rule (allows fallthrough like break-glass).
+	ruleApplied := false
+	for _, rule := range matchingRules {
 		ruleAction := defaultAction
-		if strings.TrimSpace(matchedRule.Action) != "" {
-			ruleAction = matchedRule.Action
+		if strings.TrimSpace(rule.Action) != "" {
+			ruleAction = rule.Action
 		}
-		if !applyPolicyRule(ruleAction, matchedRule, inputClaims, inputIdentity, &decision, &requiredScopes) {
-			return decision
+		localDecision := decision
+		localScopes := make([]string, len(requiredScopes))
+		copy(localScopes, requiredScopes)
+
+		if ok := applyPolicyRule(ruleAction, &rule, inputClaims, inputIdentity, &localDecision, &localScopes, true); ok {
+			ruleApplied = true
+			decision = localDecision
+			requiredScopes = localScopes
+			break
+		} else if !localDecision.Allowed {
+			ruleApplied = true
+			decision = localDecision
+			requiredScopes = localScopes
+			break
 		}
+	}
+
+	if !ruleApplied {
+		// No rule fully matched; apply global + default action only
+		decision.RequiredScopes = dedupeList(requiredScopes)
+		return decision
 	}
 
 	decision.RequiredScopes = dedupeList(requiredScopes)
@@ -222,7 +277,17 @@ func (cfg *PolicyConfig) matchingRule(path, method string) *PolicyRule {
 	return nil
 }
 
-func applyPolicyRule(action string, rule *PolicyRule, claims *TokenClaims, identity *ClientIdentity, decision *PolicyDecision, requiredScopes *[]string) bool {
+func (cfg *PolicyConfig) allMatchingRules(path, method string) []PolicyRule {
+	var out []PolicyRule
+	for _, rule := range cfg.Rules {
+		if policyRuleMatches(rule, path, method) {
+			out = append(out, rule)
+		}
+	}
+	return out
+}
+
+func applyPolicyRule(action string, rule *PolicyRule, claims *TokenClaims, identity *ClientIdentity, decision *PolicyDecision, requiredScopes *[]string, skipOnConditionFail bool) bool {
 	if rule == nil {
 		if action == "deny" {
 			*decision = PolicyDecision{
@@ -236,6 +301,9 @@ func applyPolicyRule(action string, rule *PolicyRule, claims *TokenClaims, ident
 	}
 
 	if ok, reason := policyRuleSatisfied(*rule, claims, identity); !ok {
+		if skipOnConditionFail {
+			return false
+		}
 		*decision = PolicyDecision{
 			Allowed:    false,
 			HTTPStatus: http.StatusForbidden,
@@ -306,6 +374,12 @@ func policyRuleSatisfied(rule PolicyRule, claims *TokenClaims, identity *ClientI
 		}
 		if !tokenClaimContainsAllowed(claims, key, allowed) {
 			return false, fmt.Sprintf("token claim mismatch: %s", key)
+		}
+	}
+
+	if rule.Conditions.Constraint != nil {
+		if ok, reason := evaluateCondition(*rule.Conditions.Constraint, claims, identity, PolicyRequest{}); !ok {
+			return false, reason
 		}
 	}
 
@@ -487,4 +561,333 @@ func normalizePolicyPath(path string) string {
 		path = "/" + path
 	}
 	return path
+}
+
+// ---------------------------------------------------------------------------
+// ABAC Condition Engine
+// ---------------------------------------------------------------------------
+
+// evaluateCondition recursively evaluates a condition tree.
+// Returns (true, "") if satisfied, (false, reason) if not.
+func evaluateCondition(c Condition, claims *TokenClaims, identity *ClientIdentity, req PolicyRequest) (bool, string) {
+	op := strings.ToLower(strings.TrimSpace(c.Operator))
+
+	if op == opAnd || (c.All != nil && op == "") {
+		return evaluateAll(c.All, claims, identity, req)
+	}
+	if op == opOr || (c.Any != nil && op == "") {
+		return evaluateAny(c.Any, claims, identity, req)
+	}
+	if op == opNot || c.Not != nil {
+		return evaluateNot(c, claims, identity, req)
+	}
+
+	// Leaf condition
+	if strings.TrimSpace(c.Fact) == "" {
+		return false, "condition missing 'fact'"
+	}
+	if op == "" {
+		return false, "condition missing 'operator'"
+	}
+
+	actual, err := resolveFact(c.Fact, claims, identity, req)
+	if err != "" {
+		return false, err
+	}
+
+	ok, reason := compareValues(actual, op, c.Value)
+	if !ok {
+		return false, reason
+	}
+	return true, ""
+}
+
+func evaluateAll(conditions []Condition, claims *TokenClaims, identity *ClientIdentity, req PolicyRequest) (bool, string) {
+	if len(conditions) == 0 {
+		return true, ""
+	}
+	for _, c := range conditions {
+		if ok, reason := evaluateCondition(c, claims, identity, req); !ok {
+			return false, reason
+		}
+	}
+	return true, ""
+}
+
+func evaluateAny(conditions []Condition, claims *TokenClaims, identity *ClientIdentity, req PolicyRequest) (bool, string) {
+	if len(conditions) == 0 {
+		return true, ""
+	}
+	for _, c := range conditions {
+		if ok, _ := evaluateCondition(c, claims, identity, req); ok {
+			return true, ""
+		}
+	}
+	return false, "no condition matched (any)"
+}
+
+func evaluateNot(c Condition, claims *TokenClaims, identity *ClientIdentity, req PolicyRequest) (bool, string) {
+	inner := c.Not
+	if inner == nil {
+		return false, "'not' condition missing inner condition"
+	}
+	if ok, _ := evaluateCondition(*inner, claims, identity, req); ok {
+		return false, "negated condition was true"
+	}
+	return true, ""
+}
+
+// resolveFact resolves an attribute fact string to its actual value(s).
+// Format: "source.attribute.path"
+// Sources: token (JWT claims), cert (mTLS identity), request (method/path/time)
+func resolveFact(fact string, claims *TokenClaims, identity *ClientIdentity, req PolicyRequest) ([]string, string) {
+	fact = strings.TrimSpace(fact)
+	if fact == "" {
+		return nil, "empty fact"
+	}
+
+	parts := strings.SplitN(fact, ".", 2)
+	if len(parts) < 2 {
+		return nil, fmt.Sprintf("invalid fact %q: expected source.attribute", fact)
+	}
+
+	source := strings.ToLower(strings.TrimSpace(parts[0]))
+	attrPath := strings.TrimSpace(parts[1])
+
+	switch source {
+	case "token":
+		return resolveTokenFact(attrPath, claims)
+	case "cert":
+		return resolveCertFact(attrPath, identity)
+	case "request":
+		return resolveRequestFact(attrPath, req)
+	default:
+		return nil, fmt.Sprintf("unknown fact source %q", source)
+	}
+}
+
+func resolveTokenFact(path string, claims *TokenClaims) ([]string, string) {
+	if claims == nil {
+		return nil, "token claims not available"
+	}
+
+	switch key := strings.ToLower(strings.TrimSpace(path)); key {
+	case "sub", "subject":
+		return []string{claims.Subject}, ""
+	case "iss", "issuer":
+		return []string{claims.Issuer}, ""
+	case "aud", "audience":
+		return claims.Audience, ""
+	case "jti":
+		return []string{claims.JWTID}, ""
+	case "scope", "scopes":
+		return claims.Scopes, ""
+	default:
+		segments := strings.Split(key, ".")
+		vals := extractClaimValues(claims.RawClaims, segments)
+		if len(vals) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return vals, ""
+	}
+}
+
+func resolveCertFact(path string, identity *ClientIdentity) ([]string, string) {
+	if identity == nil {
+		return nil, "client certificate identity not available"
+	}
+
+	switch strings.ToLower(strings.TrimSpace(path)) {
+	case "sub", "subject":
+		return []string{identity.Subject}, ""
+	case "thumbprint":
+		return []string{identity.Thumbprint}, ""
+	case "serial", "serial_number":
+		return []string{identity.SerialNumber}, ""
+	case "san":
+		return identity.SAN, ""
+	default:
+		return nil, fmt.Sprintf("unknown cert attribute %q", path)
+	}
+}
+
+func resolveRequestFact(path string, req PolicyRequest) ([]string, string) {
+	switch strings.ToLower(strings.TrimSpace(path)) {
+	case "method":
+		return []string{strings.ToUpper(strings.TrimSpace(req.Method))}, ""
+	case "path":
+		return []string{normalizePolicyPath(req.Path)}, ""
+	case "time.hour":
+		return []string{strconv.Itoa(time.Now().Hour())}, ""
+	case "time.minute":
+		return []string{strconv.Itoa(time.Now().Minute())}, ""
+	case "time.day_of_week", "time.dayofweek", "time.dow":
+		return []string{strconv.Itoa(int(time.Now().Weekday()))}, ""
+	default:
+		return nil, fmt.Sprintf("unknown request attribute %q", path)
+	}
+}
+
+// compareValues compares actual values against expected value using the given operator.
+func compareValues(actual []string, operator string, expected any) (bool, string) {
+	if len(actual) == 0 {
+		return false, "no actual values to compare"
+	}
+
+	op := strings.ToLower(strings.TrimSpace(operator))
+
+	switch op {
+	case opExists:
+		return true, ""
+
+	case opNotExists:
+		return false, "attribute exists but should not"
+
+	case opEq:
+		exp := normalizeToString(expected)
+		for _, a := range actual {
+			if strings.EqualFold(a, exp) {
+				return true, ""
+			}
+		}
+		return false, fmt.Sprintf("expected %q, got %v", exp, actual)
+
+	case opNeq:
+		exp := normalizeToString(expected)
+		for _, a := range actual {
+			if strings.EqualFold(a, exp) {
+				return false, fmt.Sprintf("value equals %q", exp)
+			}
+		}
+		return true, ""
+
+	case opIn:
+		allowed := anyToStringSlice(expected)
+		if len(allowed) == 0 {
+			return false, "empty allowed values for 'in'"
+		}
+		for _, a := range actual {
+			for _, b := range allowed {
+				if strings.EqualFold(a, b) {
+					return true, ""
+				}
+			}
+		}
+		return false, fmt.Sprintf("%v not in %v", actual, allowed)
+
+	case opContains:
+		exp := normalizeToString(expected)
+		for _, a := range actual {
+			if strings.Contains(strings.ToLower(a), strings.ToLower(exp)) {
+				return true, ""
+			}
+		}
+		return false, fmt.Sprintf("%q not found in %v", exp, actual)
+
+	case opMatches:
+		exp := normalizeToString(expected)
+		re, err := regexp.Compile(exp)
+		if err != nil {
+			return false, fmt.Sprintf("invalid regex %q: %v", exp, err)
+		}
+		for _, a := range actual {
+			if re.MatchString(a) {
+				return true, ""
+			}
+		}
+		return false, fmt.Sprintf("no match for pattern %q in %v", exp, actual)
+
+	case opGt, opGte, opLt, opLte, opBetween:
+		return compareNumeric(actual, op, expected)
+
+	default:
+		return false, fmt.Sprintf("unknown operator %q", op)
+	}
+}
+
+func compareNumeric(actual []string, operator string, expected any) (bool, string) {
+	expValues := anyToFloatSlice(expected)
+	if len(expValues) == 0 {
+		return false, "empty expected numeric values"
+	}
+
+	for _, a := range actual {
+		actualFloat, err := strconv.ParseFloat(strings.TrimSpace(a), 64)
+		if err != nil {
+			continue
+		}
+
+		switch operator {
+		case opGt:
+			if actualFloat > expValues[0] {
+				return true, ""
+			}
+		case opGte:
+			if actualFloat >= expValues[0] {
+				return true, ""
+			}
+		case opLt:
+			if actualFloat < expValues[0] {
+				return true, ""
+			}
+		case opLte:
+			if actualFloat <= expValues[0] {
+				return true, ""
+			}
+		case opBetween:
+			if len(expValues) >= 2 && actualFloat >= expValues[0] && actualFloat <= expValues[1] {
+				return true, ""
+			}
+		}
+	}
+
+	return false, fmt.Sprintf("numeric condition %s %v not met by %v", operator, expValues, actual)
+}
+
+func anyToFloatSlice(value any) []float64 {
+	switch v := value.(type) {
+	case float64:
+		return []float64{v}
+	case int:
+		return []float64{float64(v)}
+	case int64:
+		return []float64{float64(v)}
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return nil
+		}
+		return []float64{f}
+	case []any:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			if f, err := toFloat64(item); err == nil {
+				out = append(out, f)
+			}
+		}
+		return out
+	case []int:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			out = append(out, float64(item))
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func toFloat64(v any) (float64, error) {
+	switch val := v.(type) {
+	case float64:
+		return val, nil
+	case int:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	case string:
+		return strconv.ParseFloat(strings.TrimSpace(val), 64)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to float64", v)
+	}
 }

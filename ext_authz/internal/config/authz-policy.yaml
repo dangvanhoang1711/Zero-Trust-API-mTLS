@@ -2,27 +2,67 @@ version: "1"
 default_action: "allow"
 
 rules:
-  # Protected API requires api:read scope + rate limit
-  - name: protected-api-read
+  # ABAC Rule 1: Admin data - requires admin role AND business hours
+  - name: admin-business-hours
     match:
-      path_prefix: "/protected"
-      methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+      path_prefix: "/api/admin-data"
     conditions:
       required_scopes:
-        - "api:read"
-    rate_limit:
-      enabled: true
-      max_requests: 30
-      window: "1m"
-      identity_by: "sub"
+        - "email"
+      constraint:
+        all:
+          - fact: token.realm_access.roles
+            operator: contains
+            value: admin
+          - fact: request.time.hour
+            operator: between
+            value: [7, 22]
 
-  # Admin paths explicitly denied (zero-trust: default-deny for admin)
+  # ABAC Rule 2: User data - requires user role AND NOT weekend
+  - name: user-data-weekday
+    match:
+      path_prefix: "/api/user-data"
+    conditions:
+      constraint:
+        all:
+          - fact: token.realm_access.roles
+            operator: contains
+            value: user
+          - not:
+              fact: request.time.day_of_week
+              operator: in
+              value: [0, 6]
+
+  # ABAC Rule 3: User data - OR via cert subject (break-glass, weekends only)
+  - name: user-data-break-glass
+    match:
+      path_prefix: "/api/user-data"
+    conditions:
+      constraint:
+        all:
+          - fact: cert.subject
+            operator: matches
+            value: ".*demo-client.*"
+          - fact: request.time.day_of_week
+            operator: in
+            value: [0, 6]
+
+  # ABAC Rule 4: Profile - requires valid JWT (any subject)
+  - name: profile-access
+    match:
+      path_prefix: "/api/profile"
+    conditions:
+      constraint:
+        fact: token.sub
+        operator: exists
+
+  # ABAC Rule 5: Admin paths explicitly denied
   - name: deny-admin
     match:
       path_prefix: "/admin"
     action: "deny"
 
-  # Secrets paths explicitly denied
+  # ABAC Rule 6: Secrets paths explicitly denied
   - name: deny-secrets
     match:
       path_prefix: "/secrets"

@@ -1,6 +1,7 @@
 import api from './api';
 
 interface AuthResponse {
+  access_token?: string;
   token?: string;
   jwt?: string;
   message?: string;
@@ -14,7 +15,7 @@ export async function login(
     username,
     password,
   });
-  const token = data.token ?? data.jwt;
+  const token = data.access_token ?? data.token ?? data.jwt;
   if (token) {
     sessionStorage.setItem('jwt', token);
   }

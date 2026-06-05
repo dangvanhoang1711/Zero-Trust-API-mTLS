@@ -21,6 +21,7 @@ services:
       KEYCLOAK_REALM: "zero-trust"
       KEYCLOAK_CLIENT_ID: "web-app"
       KEYCLOAK_CLIENT_SECRET: ""
+      JWT_AUDIENCE: "api-gateway"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
     depends_on:
       keycloak:
@@ -36,12 +37,14 @@ services:
       - "9901:9901"
     volumes:
       - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
-      - ../../envoy/certs:/etc/envoy/tls
+      - ../../envoy/certs:/etc/envoy/certs
     command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --log-level debug
     depends_on:
       backend:
         condition: service_started
       ext-authz:
         condition: service_started
+      pki-init:
+        condition: service_completed_successfully
     networks:
       - private-net
