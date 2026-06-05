@@ -26,7 +26,6 @@ import (
 
 	"ext-authz/internal/auth"
 
-	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	jwt "github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
@@ -292,7 +291,7 @@ func TestAuthzServer_Check_AllowsValidRequest(t *testing.T) {
 
 	assertCheckStatus(t, resp, codes.OK)
 
-	ok := resp.GetHttpResponse().GetOkResponse()
+	ok := resp.GetOkResponse()
 	if ok == nil {
 		t.Fatal("expected OK response")
 	}
@@ -301,7 +300,7 @@ func TestAuthzServer_Check_AllowsValidRequest(t *testing.T) {
 	hasAuthCert := false
 
 	for _, header := range ok.Headers {
-		switch header.Key {
+		switch header.GetHeader().GetKey() {
 		case "x-auth-user":
 			hasAuthUser = true
 		case "x-auth-cert-subject":
@@ -389,7 +388,9 @@ func TestAuthzServer_Check_DeniesRequestWithoutRequiredScope(t *testing.T) {
 		"api-gateway",
 		expectedThumbprint,
 		"test-jti-missing-scope",
-		nil,
+		map[string]any{
+			"scope": "openid",
+		},
 	)
 	if err != nil {
 		t.Fatalf("build token: %v", err)
@@ -662,6 +663,7 @@ func newTestAuthzServer(t *testing.T, issuer, audience string, signer *ecdsa.Pri
 	serverObject := &authzServer{
 		jwtVerifier: auth.NewJWTVerifier(issuer, audience, cache),
 		replayCache: newReplayCache(10 * time.Minute),
+		policy:      auth.NewAllowPolicy(),
 	}
 
 	return serverObject, func() {
@@ -749,9 +751,9 @@ func buildAuthzCheckRequestWithHeaders(method, path, host, certPEM, token string
 	}
 
 	return &authv3.CheckRequest{
-		Attributes: &corev3.AttributeContext{
-			Request: &corev3.AttributeContext_Request{
-				Http: &corev3.AttributeContext_Request_Http{
+		Attributes: &authv3.AttributeContext{
+			Request: &authv3.AttributeContext_Request{
+				Http: &authv3.AttributeContext_HttpRequest{
 					Method:  method,
 					Path:    path,
 					Scheme:  "https",

@@ -1,3 +1,5 @@
+import time
+
 import requests
 
 from flask import current_app
@@ -10,29 +12,61 @@ class KeycloakService:
         self._realm = None
         self._client_id = None
         self._client_secret = None
+        self._oidc_config_cache = None
+        self._oidc_config_fetched_at = 0.0
 
     def _init_from_app(self):
         cfg = current_app.config
-        self._base_url = cfg["KEYCLOAK_URL"]
+        self._base_url = cfg["KEYCLOAK_URL"].rstrip("/")
         self._realm = cfg["KEYCLOAK_REALM"]
         self._client_id = cfg["KEYCLOAK_CLIENT_ID"]
         self._client_secret = cfg["KEYCLOAK_CLIENT_SECRET"]
 
+    def _cache_ttl(self):
+        return current_app.config.get("OIDC_DISCOVERY_CACHE_TTL", 300)
+
+    def _oidc_discovery_url(self):
+        configured = current_app.config.get("OIDC_DISCOVERY_URL", "").strip()
+        if configured:
+            return configured
+        return f"{self._base_url}/realms/{self._realm}/.well-known/openid-configuration"
+
+    def _oidc_config(self):
+        now = time.time()
+        if self._oidc_config_cache and (now - self._oidc_config_fetched_at) < self._cache_ttl():
+            return self._oidc_config_cache
+
+        resp = self._session.get(self._oidc_discovery_url(), timeout=10)
+        resp.raise_for_status()
+        self._oidc_config_cache = resp.json()
+        self._oidc_config_fetched_at = now
+        return self._oidc_config_cache
+
     def _token_url(self):
-        return f"{self._base_url}/realms/{self._realm}/protocol/openid-connect/token"
+        return self._oidc_config().get(
+            "token_endpoint",
+            f"{self._base_url}/realms/{self._realm}/protocol/openid-connect/token",
+        )
 
     def _admin_url(self):
         return f"{self._base_url}/admin/realms/{self._realm}"
 
+    def _client_auth_payload(self):
+        payload = {
+            "client_id": self._client_id,
+        }
+        if self._client_secret:
+            payload["client_secret"] = self._client_secret
+        return payload
+
     def get_token(self, username, password):
         self._init_from_app()
         payload = {
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
             "username": username,
             "password": password,
             "grant_type": "password",
         }
+        payload.update(self._client_auth_payload())
         resp = self._session.post(self._token_url(), data=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()
@@ -97,10 +131,9 @@ class KeycloakService:
 
     def _get_admin_token(self):
         payload = {
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
             "grant_type": "client_credentials",
         }
+        payload.update(self._client_auth_payload())
         resp = self._session.post(self._token_url(), data=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()["access_token"]

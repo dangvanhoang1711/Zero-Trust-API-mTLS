@@ -5,12 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh"
+source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
-: "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+: "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 
 echo "[SEC-04] Expect: JWT signature forgery rejected (401 Unauthorized)"
 

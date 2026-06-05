@@ -5,18 +5,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ROOT="$REPO_ROOT"
-DOCKER_COMPOSE_FILE="$REPO_ROOT/../docker-compose.yml"
+DOCKER_COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 
-source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh"
+source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
-: "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+: "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 : "${KEYCLOAK_OUTAGE_WAIT_SECONDS:=8}"
 
 compose() {
-  docker-compose -f "$DOCKER_COMPOSE_FILE" "$@"
+  docker compose -f "$DOCKER_COMPOSE_FILE" "$@"
 }
 
 api_status() {

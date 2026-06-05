@@ -143,6 +143,16 @@ python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['d
 echo "  Client cert: $PKI_DIR/client.crt"
 
 echo ""
+echo "=== 6b. Issue alternate valid client cert (CN=attacker-client) ==="
+VAULT write -format=json pki-int/issue/client-cert \
+  common_name="attacker-client" \
+  ttl=730h > "$PKI_DIR/attacker-client.json"
+
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/attacker-client.json'));print(d['data']['certificate'])" > "$PKI_DIR/attacker-client.crt"
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/attacker-client.json'));print(d['data']['private_key'])" > "$PKI_DIR/attacker-client.key"
+echo "  Attacker client cert: $PKI_DIR/attacker-client.crt"
+
+echo ""
 echo "=== 7. Extract issuing CA from Vault server response ==="
 python3 -c "
 import json
@@ -180,6 +190,11 @@ echo "" >> "$PKI_DIR/client-chain.crt"
 echo "$(cat "$PKI_DIR/client-issuing-ca.crt")" >> "$PKI_DIR/client-chain.crt"
 echo "  Client chain: $PKI_DIR/client-chain.crt"
 
+echo "$(cat "$PKI_DIR/attacker-client.crt")" > "$PKI_DIR/attacker-client-chain.crt"
+echo "" >> "$PKI_DIR/attacker-client-chain.crt"
+echo "$(cat "$PKI_DIR/client-issuing-ca.crt")" >> "$PKI_DIR/attacker-client-chain.crt"
+echo "  Attacker client chain: $PKI_DIR/attacker-client-chain.crt"
+
 echo ""
 echo "=== 9. Deploy to target locations ==="
 cat "$PKI_DIR/server-chain.crt" > "$ENVOY_TLS_DIR/tls.crt"
@@ -202,6 +217,15 @@ echo "  -> $CERTS_DIR/client.crt  (leaf only)"
 
 cat "$PKI_DIR/client.key" > "$CERTS_DIR/client.key"
 echo "  -> $CERTS_DIR/client.key"
+
+cat "$PKI_DIR/attacker-client-chain.crt" > "$CERTS_DIR/attacker-client-chain.crt"
+echo "  -> $CERTS_DIR/attacker-client-chain.crt  (alternate valid client chain)"
+
+cat "$PKI_DIR/attacker-client.crt" > "$CERTS_DIR/attacker-client.crt"
+echo "  -> $CERTS_DIR/attacker-client.crt"
+
+cat "$PKI_DIR/attacker-client.key" > "$CERTS_DIR/attacker-client.key"
+echo "  -> $CERTS_DIR/attacker-client.key"
 
 cat "$PKI_DIR/root-ca.crt" > "$CERTS_DIR/root-ca.crt"
 echo "  -> $CERTS_DIR/root-ca.crt  (trust anchor)"
