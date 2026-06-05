@@ -12,11 +12,11 @@ set -euo pipefail
 # Or: VAULT_ADDR + VAULT_TOKEN env vars (e.g. http://vault:8200 + root)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # = project_root/ (parent of infra/)
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # = repo root
 
-PKI_DIR="$PROJECT_ROOT/infra/pki-vault"
-CERTS_DIR="$PROJECT_ROOT/infra/certs"
-ENVOY_TLS_DIR="$PROJECT_ROOT/envoy_config/tls"
+PKI_DIR="$PROJECT_ROOT/vault/artifacts"
+CERTS_DIR="$PROJECT_ROOT/envoy/certs"
+ENVOY_TLS_DIR="$PROJECT_ROOT/envoy/certs"
 ENVOY_TRUST_DIR="$ENVOY_TLS_DIR/trust"
 VAULT_CONTAINER="zero-trust-mvp-vault-1"
 
@@ -227,7 +227,7 @@ MISMATCH_THUMBPRINT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 echo ""
 echo "=== 11. Generate realm-export.json with correct thumbprint ==="
 sed "s/__CLIENT_CERT_THUMBPRINT__/$THUMBPRINT/g; s/__CLIENT_MISMATCH_THUMBPRINT__/$MISMATCH_THUMBPRINT/g" \
-  "$PROJECT_ROOT/infra/keycloak/realm-export.json.template" > "$PROJECT_ROOT/infra/keycloak/realm-export.json"
+  "$PROJECT_ROOT/keycloak/realm-export.json.template" > "$PROJECT_ROOT/keycloak/realm-export.json"
 echo "  Generated realm-export.json with correct thumbprint"
 
 echo ""
