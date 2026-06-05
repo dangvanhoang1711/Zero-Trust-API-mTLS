@@ -35,13 +35,14 @@ failed() {
 
 export BASE_URL CLIENT_CERT CLIENT_KEY CA_CERT
 
-check_http_endpoint() {
+check_endpoint() {
   local name="$1"
   local url="$2"
   local max_retries="${3:-5}"
+  shift 3
 
   for _ in $(seq 1 "$max_retries"); do
-    if curl --silent --show-error --output /dev/null --max-time 5 "$url" 2>/dev/null; then
+    if curl --silent --show-error --output /dev/null --max-time 5 "$@" "$url" 2>/dev/null; then
       passed "$name is healthy"
       return 0
     fi
@@ -56,10 +57,10 @@ health_check() {
   info "=== Service Health Checks ==="
   local status=0
 
-  check_http_endpoint "Envoy HTTP" "http://localhost:10002/" 5 || status=1
-  check_http_endpoint "Backend" "http://localhost:8080/health" 5 || status=1
-  check_http_endpoint "Keycloak" "http://localhost:8081/realms/master/" 5 || status=1
-  check_http_endpoint "Vault" "http://localhost:8200/v1/sys/health" 5 || status=1
+  check_endpoint "Envoy HTTPS" "https://localhost:10001/health" 5 --cacert "$CA_CERT" || status=1
+  check_endpoint "Backend" "https://localhost:8000/health" 5 --cacert "$CA_CERT" || status=1
+  check_endpoint "Keycloak" "https://localhost:18080/realms/master/.well-known/openid-configuration" 5 --cacert "$CA_CERT" || status=1
+  check_endpoint "Vault" "https://localhost:8200/v1/sys/health" 5 --cacert "$PROJECT_ROOT/envoy/certs/vault-ca.crt" || status=1
 
   if command -v redis-cli >/dev/null 2>&1; then
     if redis-cli -h localhost -p 6379 ping >/dev/null 2>&1; then

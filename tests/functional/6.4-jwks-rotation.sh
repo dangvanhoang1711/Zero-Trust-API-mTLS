@@ -29,7 +29,7 @@ api_status() {
 
 if [ -z "$JWK_ROTATION_CMD" ]; then
   echo "SKIP: set JWK_ROTATION_CMD to rotate Keycloak signing keys and then verify post-rotation behavior."
-  echo "      Example: JWK_ROTATION_CMD=\"docker-compose -f docker-compose.yml exec keycloak /opt/keycloak/bin/kcadm.sh ...\""
+  echo "      Example: JWK_ROTATION_CMD=\"docker compose -f infrastructure/docker/docker-compose.test.yml exec -T keycloak /opt/keycloak/bin/kcadm.sh ...\""
   exit 0
 fi
 

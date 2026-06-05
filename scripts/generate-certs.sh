@@ -14,10 +14,18 @@ ENVOY_TRUST_DIR="$CERTS_DIR/trust"
 KEYCLOAK_DIR="$PROJECT_ROOT/keycloak"
 VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
 
-: "${VAULT_ADDR:=http://localhost:8200}"
+: "${VAULT_ADDR:=https://localhost:8200}"
 : "${VAULT_TOKEN:=root}"
+: "${VAULT_CACERT:=$CERTS_DIR/vault-ca.crt}"
+: "${KEYCLOAK_URL:=https://localhost:18080}"
+: "${KEYCLOAK_CA_CERT:=$CERTS_DIR/root-ca.crt}"
+: "${KEYCLOAK_ADMIN:=admin}"
+: "${KEYCLOAK_ADMIN_PASSWORD:=admin}"
 
 mkdir -p "$PKI_DIR" "$CERTS_DIR" "$ENVOY_TRUST_DIR"
+
+export VAULT_ADDR VAULT_TOKEN VAULT_CACERT
+export KEYCLOAK_URL KEYCLOAK_CA_CERT KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
@@ -37,6 +45,13 @@ vault_cmd() {
 
 vault_status() {
   vault status >/dev/null 2>&1
+}
+
+thumbprint_for_cert() {
+  local cert_path="$1"
+
+  openssl x509 -in "$cert_path" -outform DER \
+    | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
 
 # --- 1. Wait for Vault ---
@@ -70,8 +85,8 @@ else
 fi
 
 vault_cmd write pki-root/config/urls \
-  issuing_certificates="http://vault:8200/v1/pki-root/ca" \
-  crl_distribution_points="http://vault:8200/v1/pki-root/crl" 2>/dev/null || true
+  issuing_certificates="https://vault:8200/v1/pki-root/ca" \
+  crl_distribution_points="https://vault:8200/v1/pki-root/crl" 2>/dev/null || true
 
 # --- 3. RA Intermediate CA ---
 info "=== 3. RA Intermediate CA (pki-int engine, 5yr) ==="
@@ -100,8 +115,8 @@ else
 fi
 
 vault_cmd write pki-int/config/urls \
-  issuing_certificates="http://vault:8200/v1/pki-int/ca" \
-  crl_distribution_points="http://vault:8200/v1/pki-int/crl" 2>/dev/null || true
+  issuing_certificates="https://vault:8200/v1/pki-int/ca" \
+  crl_distribution_points="https://vault:8200/v1/pki-int/crl" 2>/dev/null || true
 
 # --- 4. Create roles ---
 info "=== 4. Create PKI roles ==="
@@ -145,8 +160,18 @@ python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['d
 python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['data']['private_key'])" > "$PKI_DIR/client.key"
 info "  Client cert issued"
 
-# --- 7. Extract issuing CA ---
-info "=== 7. Extract issuing CA chain ==="
+# --- 7. Issue rotated client cert ---
+info "=== 7. Issue rotated client cert ==="
+vault_cmd write -format=json pki-int/issue/client-cert \
+  common_name="attacker-client" \
+  ttl=730h > "$PKI_DIR/attacker-client.json"
+
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/attacker-client.json'));print(d['data']['certificate'])" > "$PKI_DIR/attacker-client.crt"
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/attacker-client.json'));print(d['data']['private_key'])" > "$PKI_DIR/attacker-client.key"
+info "  Rotated client cert issued"
+
+# --- 8. Extract issuing CA ---
+info "=== 8. Extract issuing CA chain ==="
 python3 -c "
 import json
 d = json.load(open('$PKI_DIR/server.json'))
@@ -167,8 +192,8 @@ with open('$PKI_DIR/client-issuing-ca.crt', 'w') as f:
     f.write(client_issuing_ca.strip() + '\n')
 "
 
-# --- 8. Build chain files ---
-info "=== 8. Build chain files ==="
+# --- 9. Build chain files ---
+info "=== 9. Build chain files ==="
 cat "$PKI_DIR/server.crt" > "$PKI_DIR/server-chain.crt"
 echo "" >> "$PKI_DIR/server-chain.crt"
 cat "$PKI_DIR/issuing-ca.crt" >> "$PKI_DIR/server-chain.crt"
@@ -177,8 +202,12 @@ cat "$PKI_DIR/client.crt" > "$PKI_DIR/client-chain.crt"
 echo "" >> "$PKI_DIR/client-chain.crt"
 cat "$PKI_DIR/client-issuing-ca.crt" >> "$PKI_DIR/client-chain.crt"
 
-# --- 9. Deploy to envoy/certs/ ---
-info "=== 9. Deploy certificates to envoy/certs/ ==="
+cat "$PKI_DIR/attacker-client.crt" > "$PKI_DIR/attacker-client-chain.crt"
+echo "" >> "$PKI_DIR/attacker-client-chain.crt"
+cat "$PKI_DIR/client-issuing-ca.crt" >> "$PKI_DIR/attacker-client-chain.crt"
+
+# --- 10. Deploy to envoy/certs/ ---
+info "=== 10. Deploy certificates to envoy/certs/ ==="
 cp "$PKI_DIR/server-chain.crt" "$CERTS_DIR/server-chain.crt"
 cp "$PKI_DIR/server.crt"       "$CERTS_DIR/server.crt"
 cp "$PKI_DIR/server.key"       "$CERTS_DIR/server.key"
@@ -188,6 +217,9 @@ cp "$PKI_DIR/issuing-ca.crt"   "$CERTS_DIR/intermediate-ca.crt"
 cp "$PKI_DIR/client-chain.crt" "$CERTS_DIR/client-chain.crt"
 cp "$PKI_DIR/client.crt"       "$CERTS_DIR/client.crt"
 cp "$PKI_DIR/client.key"       "$CERTS_DIR/client.key"
+cp "$PKI_DIR/attacker-client-chain.crt" "$CERTS_DIR/attacker-client-chain.crt"
+cp "$PKI_DIR/attacker-client.crt"       "$CERTS_DIR/attacker-client.crt"
+cp "$PKI_DIR/attacker-client.key"       "$CERTS_DIR/attacker-client.key"
 
 # Also deploy to trust directory for Envoy
 cp "$PKI_DIR/root-ca.crt"      "$ENVOY_TRUST_DIR/root-ca.crt"
@@ -200,14 +232,15 @@ cp "$PKI_DIR/root-ca.crt"      "$CERTS_DIR/ca.crt"
 
 info "  Certificates deployed to $CERTS_DIR/"
 
-# --- 10. Compute thumbprint ---
-info "=== 10. Compute SHA-256 thumbprint ==="
-THUMBPRINT=$(openssl x509 -in "$PKI_DIR/client.crt" -outform DER | sha256sum | cut -d' ' -f1)
-MISMATCH_THUMBPRINT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+# --- 11. Compute thumbprints ---
+info "=== 11. Compute SHA-256 thumbprints ==="
+THUMBPRINT="$(thumbprint_for_cert "$PKI_DIR/client.crt")"
+MISMATCH_THUMBPRINT="$(thumbprint_for_cert "$PKI_DIR/attacker-client.crt")"
 info "  Client cert thumbprint: $THUMBPRINT"
+info "  Rotated client cert thumbprint: $MISMATCH_THUMBPRINT"
 
-# --- 11. Generate realm-export.json with correct thumbprint ---
-info "=== 11. Generate realm-export.json ==="
+# --- 12. Generate realm-export.json with correct thumbprints ---
+info "=== 12. Generate realm-export.json ==="
 TEMPLATE="$KEYCLOAK_DIR/realm-export.json.template"
 if [ -f "$TEMPLATE" ]; then
   sed "s/__CLIENT_CERT_THUMBPRINT__/$THUMBPRINT/g; s/__CLIENT_MISMATCH_THUMBPRINT__/$MISMATCH_THUMBPRINT/g" \
@@ -217,12 +250,21 @@ else
   info "  Template not found at $TEMPLATE, skipping realm generation"
 fi
 
-# --- 12. Update Keycloak thumbprint via Admin REST API ---
-info "=== 12. Update Keycloak thumbprint ==="
+# --- 13. Update Keycloak thumbprints via Admin REST API ---
+info "=== 13. Update Keycloak thumbprints ==="
 if [ -f "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" ]; then
-  python3 "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" "$THUMBPRINT" && \
-    info "  Keycloak thumbprint updated" || \
-    info "  WARN: Keycloak thumbprint update failed (may need manual update)"
+  if python3 "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" "$THUMBPRINT" demo-client cnf-thumbprint; then
+    info "  Updated demo-client thumbprint"
+  else
+    info "  WARN: demo-client thumbprint update failed"
+  fi
+
+  if python3 "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" \
+    "$MISMATCH_THUMBPRINT" demo-client-mismatch cnf-thumbprint-mismatch; then
+    info "  Updated demo-client-mismatch thumbprint"
+  else
+    info "  WARN: demo-client-mismatch thumbprint update failed"
+  fi
 else
   info "  update_keycloak_thumbprint.py not found, skipping"
 fi

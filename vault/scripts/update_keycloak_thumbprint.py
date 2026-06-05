@@ -1,21 +1,41 @@
 #!/usr/bin/env python3
 """
 Update cnf.x5t#S256 thumbprint in Keycloak via Admin REST API.
-Usage: python3 update_keycloak_thumbprint.py <thumbprint_hex>
+Usage: python3 update_keycloak_thumbprint.py <thumbprint_hex> [client_id] [mapper_name]
 """
-import json, os, sys, urllib.request, urllib.parse
+import json
+import os
+from pathlib import Path
+import ssl
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 THUMBPRINT = sys.argv[1] if len(sys.argv) > 1 else ""
 if not THUMBPRINT:
     print("ERROR: thumbprint argument required")
     sys.exit(1)
 
-BASE = os.environ.get("KEYCLOAK_URL", "http://localhost:18080")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CA_CERT = REPO_ROOT / "envoy" / "certs" / "root-ca.crt"
+
+BASE = os.environ.get("KEYCLOAK_URL", "https://localhost:18080")
 ADMIN_USER = os.environ.get("KEYCLOAK_ADMIN", "admin")
 ADMIN_PASS = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
-REALM = "zero-trust"
-CLIENT_ID = "demo-client"
-MAPPER_NAME = "cnf-thumbprint"
+REALM = os.environ.get("KEYCLOAK_REALM", "zero-trust")
+CLIENT_ID = sys.argv[2] if len(sys.argv) > 2 else "demo-client"
+MAPPER_NAME = sys.argv[3] if len(sys.argv) > 3 else "cnf-thumbprint"
+CA_CERT = os.environ.get("KEYCLOAK_CA_CERT") or os.environ.get("CA_CERT") or ""
+if not CA_CERT and DEFAULT_CA_CERT.exists():
+    CA_CERT = str(DEFAULT_CA_CERT)
+
+SSL_CONTEXT = None
+if BASE.startswith("https://"):
+    if CA_CERT:
+        SSL_CONTEXT = ssl.create_default_context(cafile=CA_CERT)
+    else:
+        SSL_CONTEXT = ssl.create_default_context()
 
 def req(method, path, data=None, token=None, form=False):
     url = f"{BASE}{path}"
@@ -30,7 +50,7 @@ def req(method, path, data=None, token=None, form=False):
         body = json.dumps(data).encode() if data else None
     r = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(r) as resp:
+        with urllib.request.urlopen(r, context=SSL_CONTEXT) as resp:
             ct = resp.headers.get("Content-Type", "")
             if "application/json" in ct or "json" in ct:
                 return json.loads(resp.read().decode())
@@ -38,6 +58,9 @@ def req(method, path, data=None, token=None, form=False):
     except urllib.error.HTTPError as e:
         err_body = e.read().decode()
         print(f"  HTTP {e.code}: {err_body[:200]}")
+        return None
+    except urllib.error.URLError as e:
+        print(f"  URL error: {e}")
         return None
 
 # 1. Get admin token

@@ -235,6 +235,8 @@ func (cfg *PolicyConfig) Evaluate(req PolicyRequest) PolicyDecision {
 	// Try each matching rule in order. If a rule matches path/method but fails
 	// conditions, continue to the next rule (allows fallthrough like break-glass).
 	ruleApplied := false
+	var fallbackDecision *PolicyDecision
+	var fallbackScopes []string
 	for _, rule := range matchingRules {
 		ruleAction := defaultAction
 		if strings.TrimSpace(rule.Action) != "" {
@@ -250,14 +252,29 @@ func (cfg *PolicyConfig) Evaluate(req PolicyRequest) PolicyDecision {
 			requiredScopes = localScopes
 			break
 		} else if !localDecision.Allowed {
-			ruleApplied = true
-			decision = localDecision
-			requiredScopes = localScopes
-			break
+			if ruleAction == "deny" {
+				ruleApplied = true
+				decision = localDecision
+				requiredScopes = localScopes
+				break
+			}
+
+			recordedDecision := localDecision
+			recordedScopes := make([]string, len(localScopes))
+			copy(recordedScopes, localScopes)
+			fallbackDecision = &recordedDecision
+			fallbackScopes = recordedScopes
 		}
 	}
 
 	if !ruleApplied {
+		if fallbackDecision != nil {
+			decision = *fallbackDecision
+			requiredScopes = fallbackScopes
+			decision.RequiredScopes = dedupeList(requiredScopes)
+			return decision
+		}
+
 		// No rule fully matched; apply global + default action only
 		decision.RequiredScopes = dedupeList(requiredScopes)
 		return decision
@@ -301,13 +318,13 @@ func applyPolicyRule(action string, rule *PolicyRule, claims *TokenClaims, ident
 	}
 
 	if ok, reason := policyRuleSatisfied(*rule, claims, identity); !ok {
-		if skipOnConditionFail {
-			return false
-		}
 		*decision = PolicyDecision{
 			Allowed:    false,
 			HTTPStatus: http.StatusForbidden,
 			Reason:     reason,
+		}
+		if skipOnConditionFail {
+			return false
 		}
 		return false
 	}

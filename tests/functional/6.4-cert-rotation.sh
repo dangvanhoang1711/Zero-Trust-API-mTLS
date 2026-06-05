@@ -12,8 +12,8 @@ source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 : "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
 : "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
 : "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
-: "${ROTATED_CLIENT_CERT:=""}"
-: "${ROTATED_CLIENT_KEY:=""}"
+: "${ROTATED_CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/attacker-client-chain.crt}"
+: "${ROTATED_CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/attacker-client.key}"
 : "${ROTATED_TOKEN_CLIENT:=demo-client-mismatch}"
 
 api_status() {
@@ -31,9 +31,10 @@ api_status() {
     "$BASE_URL"
 }
 
-if [ -z "$ROTATED_CLIENT_CERT" ] || [ -z "$ROTATED_CLIENT_KEY" ]; then
-  echo "SKIP: set ROTATED_CLIENT_CERT and ROTATED_CLIENT_KEY to run cert-rotation scenario."
-  echo "      Example: ROTATED_CLIENT_CERT=/path/client_new.crt ROTATED_CLIENT_KEY=/path/client_new.key"
+if [ ! -f "$ROTATED_CLIENT_CERT" ] || [ ! -f "$ROTATED_CLIENT_KEY" ]; then
+  echo "SKIP: rotated client certificate/key not found."
+  echo "      Expected: ROTATED_CLIENT_CERT=$ROTATED_CLIENT_CERT"
+  echo "                ROTATED_CLIENT_KEY=$ROTATED_CLIENT_KEY"
   exit 0
 fi
 

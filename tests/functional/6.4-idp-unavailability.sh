@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ROOT="$REPO_ROOT"
-DOCKER_COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+DOCKER_COMPOSE_FILE="$REPO_ROOT/infrastructure/docker/docker-compose.test.yml"
 
 source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 

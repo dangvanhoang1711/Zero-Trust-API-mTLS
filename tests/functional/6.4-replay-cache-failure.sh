@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ROOT="$REPO_ROOT"
-DOCKER_COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+DOCKER_COMPOSE_FILE="$REPO_ROOT/infrastructure/docker/docker-compose.test.yml"
 
 source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 
@@ -51,7 +51,7 @@ wait_for_api_with_token() {
   return 1
 }
 
-echo "[RES-02] Replay cache behavior across ext_authz restart"
+echo "[RES-02] Replay cache behavior across ext-authz restart"
 
 wait_for_keycloak
 
@@ -69,25 +69,25 @@ if [ "$second_status" != "403" ]; then
   exit 1
 fi
 
-compose restart ext_authz
+compose restart ext-authz
 sleep "$EXT_AUTHZ_RECOVERY_WAIT_SECONDS"
 
 RECOVERY_TOKEN="$(get_access_token "demo-client")"
 if ! wait_for_api_with_token "$RECOVERY_TOKEN" "$CLIENT_CERT" "$CLIENT_KEY"; then
-  echo "FAIL: service did not recover after ext_authz restart"
+  echo "FAIL: service did not recover after ext-authz restart"
   exit 1
 fi
 
 third_status="$(api_status "$TOKEN" "$CLIENT_CERT" "$CLIENT_KEY")"
 if [ "$third_status" != "$REPLAY_EXPECTED_STATUS_AFTER_RESTART" ]; then
-  echo "FAIL: expected HTTP $REPLAY_EXPECTED_STATUS_AFTER_RESTART after ext_authz restart, got $third_status"
+  echo "FAIL: expected HTTP $REPLAY_EXPECTED_STATUS_AFTER_RESTART after ext-authz restart, got $third_status"
   echo "      Set REPLAY_EXPECTED_STATUS_AFTER_RESTART=403 for persistent Redis-backed replay cache,"
   echo "      or REPLAY_EXPECTED_STATUS_AFTER_RESTART=200 for single-instance in-memory reset behavior."
   exit 1
 fi
 
 if [ "$REPLAY_EXPECTED_STATUS_AFTER_RESTART" = "403" ]; then
-  echo "PASS: replay marker persisted across ext_authz restart (external Redis-backed cache)"
+  echo "PASS: replay marker persisted across ext-authz restart (external Redis-backed cache)"
 else
-  echo "PASS: replay cache reset observed after ext_authz restart (single-instance in-memory behavior)"
+  echo "PASS: replay cache reset observed after ext-authz restart (single-instance in-memory behavior)"
 fi

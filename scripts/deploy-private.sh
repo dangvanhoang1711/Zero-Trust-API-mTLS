@@ -63,7 +63,9 @@ docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
 # --- 4. Wait for Keycloak health ---
 info "=== Step 4: Waiting for Keycloak ==="
 for i in $(seq 1 24); do
-  if curl -sf --connect-timeout 3 --max-time 5 "http://localhost:8080/health" > /dev/null 2>&1; then
+  if curl -sf --connect-timeout 3 --max-time 5 \
+    --cacert "$CERT_DIR/root-ca.crt" \
+    "https://localhost:18080/realms/zero-trust/.well-known/openid-configuration" > /dev/null 2>&1; then
     info "  Keycloak is healthy"
     break
   fi
@@ -79,11 +81,13 @@ done
 # --- 5. Wait for Vault health ---
 info "=== Step 5: Waiting for Vault ==="
 for i in $(seq 1 18); do
-  if curl -sf --connect-timeout 3 --max-time 5 "http://localhost:8200/v1/sys/health" > /dev/null 2>&1; then
+  if curl -sf --connect-timeout 3 --max-time 5 \
+    --cacert "$CERT_DIR/vault-ca.crt" \
+    "https://localhost:8200/v1/sys/health" > /dev/null 2>&1; then
     info "  Vault is healthy"
     break
   fi
-  if [ "$i" -eq 18]; then
+  if [ "$i" -eq 18 ]; then
     err "Vault failed to become healthy within 90 seconds"
     docker compose -f "$COMPOSE_FILE" logs vault --tail=30
     exit 1
@@ -97,15 +101,13 @@ info "=== Step 6: Waiting for pki-init to complete ==="
 PKI_CONTAINER=$(docker compose -f "$COMPOSE_FILE" ps -q pki-init 2>/dev/null || true)
 if [ -n "$PKI_CONTAINER" ]; then
   for i in $(seq 1 30); do
-    local status
     status="$(docker inspect "$PKI_CONTAINER" --format '{{.State.Status}}' 2>/dev/null || echo 'missing')"
     if [ "$status" = "exited" ]; then
-      local exit_code
-      exit_code="$(docker inspect "$PKI_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || echo 1)"
-      if [ "$exit_code" -eq 0 ]; then
+      container_exit_code="$(docker inspect "$PKI_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null || echo 1)"
+      if [ "$container_exit_code" -eq 0 ]; then
         info "  pki-init completed successfully"
       else
-        err "pki-init failed with exit code $exit_code"
+        err "pki-init failed with exit code $container_exit_code"
         docker logs "$PKI_CONTAINER" --tail=40
         exit 1
       fi
@@ -129,7 +131,7 @@ if [ "${1:-}" != "--skip-pki" ]; then
     bash "$SCRIPT_DIR/generate-certs.sh"
   else
     info "  generate-certs.sh not found, running Vault PKI inline..."
-    VAULT_ADDR="http://localhost:8200" VAULT_TOKEN="root" \
+    VAULT_ADDR="https://localhost:8200" VAULT_TOKEN="root" VAULT_CACERT="$CERT_DIR/vault-ca.crt" \
       bash "$PROJECT_ROOT/vault/scripts/gen-pki-vault.sh"
   fi
 else
@@ -167,6 +169,6 @@ else
 fi
 
 info "=== Deployment complete ==="
-info "Keycloak admin console: http://localhost:8080/admin (username: admin)"
-info "Vault UI:              http://localhost:8200/ui    (token: root)"
+info "Keycloak admin console: https://localhost:18080/admin (username: admin)"
+info "Vault UI:              https://localhost:8200/ui    (token: root)"
 info "Certs synced to:       s3://$S3_BUCKET/"

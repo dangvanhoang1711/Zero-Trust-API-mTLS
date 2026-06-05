@@ -2,8 +2,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     ports:
-      - "8080:8080"
-      - "8443:8443"
+      - "8081:8080"
+      - "18080:8443"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
@@ -33,50 +33,13 @@ services:
       - private-net
 
   vault-tls-init:
-    image: alpine:3.18
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/images/vault-init/Dockerfile
     volumes:
       - ../../envoy/certs:/certs
       - ../vault/vault.hcl:/vault-config/vault.hcl:ro
-    entrypoint: |
-      /bin/sh -c '
-        set -e
-        apk add --no-cache openssl > /dev/null 2>&1
-
-        echo "=== Vault TLS Init: check existing ==="
-        if [ -f /certs/vault-ca.crt ] && [ -f /certs/vault-tls/cert.pem ] && [ -f /certs/vault-tls/privkey.pem ]; then
-          if openssl x509 -in /certs/vault-tls/cert.pem -noout -subject > /dev/null 2>&1; then
-            echo "Vault TLS certs valid, skipping"
-            exit 0
-          fi
-        fi
-
-        echo "=== Vault TLS Init: generate CA ==="
-        mkdir -p /certs/vault-tls
-        openssl genrsa -out /certs/vault-tls/ca.key 2048 2>/dev/null
-        openssl req -x509 -new -nodes -key /certs/vault-tls/ca.key -sha256 \
-          -days 3650 -out /certs/vault-ca.crt \
-          -subj "/CN=Vault Bootstrap CA"
-
-        echo "=== Vault TLS Init: generate server cert ==="
-        openssl genrsa -out /certs/vault-tls/privkey.pem 2048 2>/dev/null
-        openssl req -new -key /certs/vault-tls/privkey.pem \
-          -out /tmp/vault.csr \
-          -subj "/CN=vault"
-        echo "subjectAltName=DNS:vault,DNS:localhost,IP:127.0.0.1" > /tmp/vault_ext.cnf
-        openssl x509 -req -in /tmp/vault.csr \
-          -CA /certs/vault-ca.crt -CAkey /certs/vault-tls/ca.key \
-          -CAcreateserial -out /certs/vault-tls/cert.pem \
-          -days 3650 -extfile /tmp/vault_ext.cnf
-
-        echo "=== Vault TLS Init: generate config ==="
-        cp /vault-config/vault.hcl /certs/vault.hcl
-
-        echo "=== Vault TLS Init: permissions ==="
-        chmod 644 /certs/vault-ca.crt /certs/vault.hcl 2>/dev/null || true
-        chmod 644 /certs/vault-tls/cert.pem /certs/vault-tls/privkey.pem 2>/dev/null || true
-
-        echo "=== Vault TLS Init Complete ==="
-      '
+    entrypoint: ["/usr/local/bin/vault-tls-init.sh"]
     deploy:
       resources:
         limits:
@@ -141,8 +104,9 @@ services:
     environment:
       KEYCLOAK_URL: "https://keycloak:8443"
       KEYCLOAK_REALM: "zero-trust"
-      JWT_ISSUER: "https://keycloak:8443/realms/zero-trust"
+      JWT_ISSUER: "https://keycloak:18080/realms/zero-trust"
       JWT_AUDIENCE: "api-gateway"
+      JWKS_URL: "https://keycloak:8443/realms/zero-trust/protocol/openid-connect/certs"
       REDIS_URL: "redis://redis:6379"
       AUTHZ_POLICY_FILE: "/etc/ext-authz/config/authz-policy.yaml"
       VAULT_ADDR: "https://vault:8200"
@@ -166,12 +130,15 @@ services:
       - private-net
 
   pki-init:
-    image: hashicorp/vault:1.15
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/images/vault-init/Dockerfile
     depends_on:
       vault:
         condition: service_healthy
     volumes:
       - ../../envoy/certs:/certs
+      - ../../keycloak:/keycloak
     environment:
       VAULT_ADDR: "https://vault:8200"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
@@ -179,125 +146,7 @@ services:
       KEYCLOAK_URL: "https://keycloak:8443"
       KEYCLOAK_ADMIN: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
       KEYCLOAK_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
-    entrypoint: |
-      /bin/sh -c '
-        set -e
-        apk add --no-cache python3 openssl > /dev/null 2>&1
-
-        echo "=== PKI Init: check existing certs ==="
-        if [ -f /certs/tls.crt ] && [ -f /certs/client.crt ] && [ -f /certs/ca-chain.crt ]; then
-          cat /certs/intermediate-ca.crt /certs/root-ca.crt > /tmp/_check_chain.crt 2>/dev/null || true
-          if openssl verify -CAfile /tmp/_check_chain.crt /certs/tls.crt > /dev/null 2>&1; then
-            echo "Certs valid, skipping regeneration"
-            exit 0
-          fi
-        fi
-        echo "Regenerating certs..."
-
-        echo "=== PKI Init: wait for Vault ==="
-        for try in 1 2 3 4 5 6 7 8 9 10 15; do
-          if vault status > /dev/null 2>&1; then
-            echo "Vault ready (unsealed)"
-            break
-          fi
-          if vault status -format=json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);exit(0 if d.get(\"sealed\") else 1)" 2>/dev/null; then
-            echo "Vault reachable but sealed"
-            break
-          fi
-          echo "Waiting for Vault..."
-          sleep 3
-        done
-
-        echo "=== PKI Init: check initialized ==="
-        CREDS_FILE="/certs/vault-creds.json"
-        if vault status -format=json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);exit(0 if d.get(\"initialized\") else 1)" 2>/dev/null; then
-          echo "Vault already initialized"
-          if vault status -format=json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);exit(0 if d.get(\"sealed\") else 1)" 2>/dev/null; then
-            echo "Vault sealed -- reading creds from $${CREDS_FILE}"
-            if [ -f "$${CREDS_FILE}" ]; then
-              UNSEAL_KEY=$(python3 -c "import json;print(json.load(open(\"$${CREDS_FILE}\"))[\"unseal_key\"])")
-              ROOT_TOKEN=$(python3 -c "import json;print(json.load(open(\"$${CREDS_FILE}\"))[\"root_token\"])")
-              vault operator unseal "$$UNSEAL_KEY" > /dev/null 2>&1
-              vault login "$$ROOT_TOKEN" > /dev/null 2>&1
-              echo "Vault unsealed"
-            else
-              echo "ERROR: $${CREDS_FILE} not found, cannot unseal"
-              exit 1
-            fi
-          fi
-        else
-          echo "Vault not initialized -- init + unseal + save creds"
-          INIT_OUT=$$(vault operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null)
-          UNSEAL_KEY=$$(echo "$$INIT_OUT" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"unseal_keys_b64\"][0])")
-          ROOT_TOKEN=$$(echo "$$INIT_OUT" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"root_token\"])")
-          python3 -c "import json,sys;json.dump({\"unseal_key\":\"$$UNSEAL_KEY\",\"root_token\":\"$$ROOT_TOKEN\"},sys.stdout)" > "$${CREDS_FILE}"
-          chmod 600 "$${CREDS_FILE}"
-          vault operator unseal "$$UNSEAL_KEY" > /dev/null 2>&1
-          vault login "$$ROOT_TOKEN" > /dev/null 2>&1
-          export VAULT_TOKEN="$$ROOT_TOKEN"
-          echo "Vault init + unseal complete"
-        fi
-
-        echo "=== PKI Init: engines ==="
-        vault secrets enable -path=pki-root pki 2>/dev/null || true
-        vault secrets tune -max-lease-ttl=87600h pki-root
-
-        vault write -field=certificate pki-root/root/generate/internal common_name="Zero Trust Root CA" ttl=87600h > /certs/root-ca.crt
-        echo "" >> /certs/root-ca.crt
-
-        vault secrets disable pki-int 2>/dev/null || true
-        vault secrets enable -path=pki-int pki
-        vault secrets tune -max-lease-ttl=43800h pki-int
-
-        vault write -format=json pki-int/intermediate/generate/internal common_name="Zero Trust Intermediate CA" ttl=43800h > /tmp/int.json
-
-        python3 -c "import json;d=json.load(open(\"/tmp/int.json\"));print(d[\"data\"][\"csr\"])" > /tmp/int.csr
-
-        vault write -format=json pki-root/root/sign-intermediate csr=@/tmp/int.csr format=pem_bundle ttl=43800h > /tmp/int-signed.json
-
-        python3 -c "import json,sys;d=json.load(open(\"/tmp/int-signed.json\"));p=d[\"data\"][\"certificate\"];print(p[:p.find(\"END CERTIFICATE\")+len(\"END CERTIFICATE-----\")])" > /tmp/int.crt
-
-        vault write pki-int/intermediate/set-signed certificate=@/tmp/int.crt
-
-        cp /certs/root-ca.crt /certs/ca-chain.crt
-        echo "" >> /certs/ca-chain.crt
-        cat /tmp/int.crt >> /certs/ca-chain.crt
-
-        echo "=== PKI Init: merge vault CA into ca-chain ==="
-        echo "" >> /certs/ca-chain.crt
-        cat /certs/vault-ca.crt >> /certs/ca-chain.crt
-
-        cp /tmp/int.crt /certs/intermediate-ca.crt
-        mkdir -p /certs/trust
-        cp /certs/intermediate-ca.crt /certs/trust/intermediate-ca.crt
-        cp /certs/root-ca.crt /certs/trust/root-ca.crt
-
-        echo "=== PKI Init: roles ==="
-        vault write pki-int/roles/server-cert allow_any_name=true max_ttl=730h ttl=730h key_type=ec key_bits=256 server_flag=true
-        vault write pki-int/roles/client-cert allow_any_name=true max_ttl=730h ttl=730h key_type=ec key_bits=256 client_flag=true
-
-        echo "=== PKI Init: server cert ==="
-        vault write -format=json pki-int/issue/server-cert common_name=localhost alt_names="localhost,envoy,backend,ext-authz,keycloak" ip_sans="127.0.0.1" ttl=730h > /tmp/server.json
-
-        python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"certificate\"])" > /certs/tls.crt
-        python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"private_key\"])" > /certs/tls.key
-
-        cp /certs/tls.crt /certs/server-chain.crt
-        echo "" >> /certs/server-chain.crt
-        cat /tmp/int.crt >> /certs/server-chain.crt
-
-        echo "=== PKI Init: client cert ==="
-        vault write -format=json pki-int/issue/client-cert common_name=demo-client ttl=730h > /tmp/client.json
-
-        python3 -c "import json;d=json.load(open(\"/tmp/client.json\"));print(d[\"data\"][\"certificate\"])" > /certs/client.crt
-        python3 -c "import json;d=json.load(open(\"/tmp/client.json\"));print(d[\"data\"][\"private_key\"])" > /certs/client.key
-
-        echo "=== PKI Init: fix permissions ==="
-        chmod 644 /certs/*.crt /certs/*.key 2>/dev/null || true
-        chmod 644 /certs/trust/*.crt 2>/dev/null || true
-
-        echo "=== PKI Init Complete ==="
-      '
+    entrypoint: ["/usr/local/bin/pki-init.sh"]
     deploy:
       resources:
         limits:
