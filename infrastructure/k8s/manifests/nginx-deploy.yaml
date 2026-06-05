@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-resource-server
+  labels:
+    app: resource-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: resource-server
+  template:
+    metadata:
+      labels:
+        app: resource-server
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        # Tạo một trang HTML đơn giản để dễ nhận biết khi test thành công
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "echo '<h1>Welcome to Resource Server (Data Plane)</h1><p>mTLS and Authz Verified!</p>' > /usr/share/nginx/html/index.html"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resource-server  # TÊN NÀY PHẢI KHỚP VỚI 'address' TRONG ENVOY.YAML
+spec:
+  selector:
+    app: resource-server
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80

@@ -1,0 +1,84 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: envoy-server-cert
+  namespace: default
+spec:
+  secretName: envoy-server-tls
+  commonName: envoy-service.default.svc.cluster.local
+  dnsNames:
+    - envoy-service
+    - envoy-service.default
+    - envoy-service.default.svc
+    - envoy-service.default.svc.cluster.local
+  duration: 24h
+  renewBefore: 6h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: vault-server-clusterissuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: envoy-client-trust
+  namespace: default
+type: Opaque
+stringData:
+  intermediate-ca.crt: |
+    REPLACE_WITH_INTERMEDIATE_CA_CERT
+  ca.crl: |
+    REPLACE_WITH_CURRENT_PEM_CRL
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: client-mtls-cert
+  namespace: default
+spec:
+  secretName: client-mtls
+  commonName: client
+  duration: 24h
+  renewBefore: 6h
+  usages:
+    - client auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: vault-client-clusterissuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mtls-test-client
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mtls-test-client
+  template:
+    metadata:
+      labels:
+        app: mtls-test-client
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.7.1
+          command: ["sleep", "infinity"]
+          volumeMounts:
+            - name: client-cert
+              mountPath: /var/run/tls/client
+              readOnly: true
+      volumes:
+        - name: client-cert
+          secret:
+            secretName: client-mtls

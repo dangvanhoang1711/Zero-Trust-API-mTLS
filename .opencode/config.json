@@ -1,0 +1,48 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openclaude/gpt-5.5",
+  "provider": {
+    "openclaude": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenClaude",
+      "options": {
+        "baseURL": "https://open-claude.com/v1"
+      },
+      "models": {
+        "claude-opus-4-7": {
+          "name": "Claude Opus 4.7"
+        },
+        "claude-opus-4-6": {
+          "name": "Claude Opus 4.6"
+        },
+        "claude-opus-4-5": {
+          "name": "Claude Opus 4.5"
+        },
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6"
+        },
+        "claude-haiku-4-5": {
+          "name": "Claude Haiku 4.5"
+        },
+        "gpt-5.4-image": {
+          "name": "GPT-5.4 Image"
+        },
+        "gpt-5.5-xhigh": {
+          "name": "GPT-5.5 XHigh"
+        },
+        "gpt-5.4-xhigh": {
+          "name": "GPT-5.4 XHigh"
+        },
+        "gpt-5.5": {
+          "name": "GPT-5.5"
+        },
+        "gpt-5.4": {
+          "name": "GPT-5.4"
+        },
+        "deepseek-v4-flash": {
+          "name": "DeepSeek V4 Flash"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Đăng ký{% endblock %}
+{% block content %}
+<div style="max-width:400px;margin:60px auto;">
+  <div class="card">
+    <h3 style="font-size:24px;text-align:center;margin-bottom:20px;">Đăng ký</h3>
+    <form method="POST">
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Tên đăng nhập</label>
+        <input type="text" name="username" required
+          style="width:100%;padding:12px 14px;background:rgba(8,12,24,0.6);border:1px solid rgba(51,65,85,0.4);
+          border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Email</label>
+        <input type="email" name="email" required
+          style="width:100%;padding:12px 14px;background:rgba(8,12,24,0.6);border:1px solid rgba(51,65,85,0.4);
+          border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;">
+      </div>
+      <div style="margin-bottom:14px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Mật khẩu</label>
+        <input type="password" name="password" required
+          style="width:100%;padding:12px 14px;background:rgba(8,12,24,0.6);border:1px solid rgba(51,65,85,0.4);
+          border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Xác nhận mật khẩu</label>
+        <input type="password" name="confirm_password" required
+          style="width:100%;padding:12px 14px;background:rgba(8,12,24,0.6);border:1px solid rgba(51,65,85,0.4);
+          border-radius:10px;color:#e2e8f0;font-size:15px;outline:none;">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;">Đăng ký</button>
+    </form>
+    <div style="text-align:center;margin-top:16px;font-size:14px;color:#64748b;">
+      Đã có tài khoản? <a href="{{ url_for('login') }}" style="color:#60a5fa;text-decoration:none;">Đăng nhập</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

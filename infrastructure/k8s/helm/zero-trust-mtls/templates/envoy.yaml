@@ -1,0 +1,80 @@
+{{- if .Values.envoy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.envoy.configMapName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+data:
+  envoy.yaml: |
+{{- tpl .Values.envoy.config . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+    app: envoy
+spec:
+  replicas: {{ .Values.envoy.replicas }}
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      containers:
+        - name: envoy
+          image: "{{ .Values.envoy.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.envoy.containerPort }}
+            - containerPort: {{ .Values.envoy.adminPort }}
+          command:
+            - envoy
+            - -c
+            - /etc/envoy/envoy.yaml
+            - --log-level
+            - warning
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/envoy/envoy.yaml
+              subPath: envoy.yaml
+            {{- if .Values.envoy.tls.enabled }}
+            - name: envoy-cert-volume
+              mountPath: /etc/envoy/tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Values.envoy.configMapName }}
+        {{- if .Values.envoy.tls.enabled }}
+        - name: envoy-cert-volume
+          secret:
+            secretName: {{ .Values.envoy.tls.secretName }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.envoy.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: envoy
+  ports:
+    - protocol: TCP
+      name: http
+      port: {{ .Values.envoy.servicePort }}
+      targetPort: {{ .Values.envoy.containerPort }}
+    - protocol: TCP
+      name: admin
+      port: {{ .Values.envoy.adminPort }}
+      targetPort: {{ .Values.envoy.adminPort }}
+  type: {{ .Values.envoy.serviceType }}
+{{- end }}

@@ -1,0 +1,222 @@
+#!/bin/bash
+set -euo pipefail
+
+# === Zero-Trust PKI Certificate Generation ===
+# Sets up Vault PKI engine, issues server + client certs, and deploys to envoy/certs/
+# Usage: ./generate-certs.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd")
+
+PKI_DIR="$PROJECT_ROOT/vault/artifacts"
+CERTS_DIR="$PROJECT_ROOT/envoy/certs"
+ENVOY_TRUST_DIR="$CERTS_DIR/trust"
+KEYCLOAK_DIR="$PROJECT_ROOT/keycloak"
+VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
+
+: "${VAULT_ADDR:=http://localhost:8200}"
+: "${VAULT_TOKEN:=root}"
+
+mkdir -p "$PKI_DIR" "$CERTS_DIR" "$ENVOY_TRUST_DIR"
+
+log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+info() { log "INFO: $*"; }
+err()  { log "ERROR: $*"; }
+
+VAULT() {
+  vault "$@"
+}
+
+VAULT_STATUS() {
+  vault status > /dev/null 2>&1
+}
+
+# --- 1. Wait for Vault ---
+info "=== 1. Wait for Vault ==="
+for i in $(seq 1 30); do
+  if VAULT_STATUS; then
+    info "  Vault ready"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    err "Vault not reachable at $VAULT_ADDR after 30 seconds"
+    exit 1
+  fi
+  sleep 1
+done
+
+# --- 2. Root CA ---
+info "=== 2. Root CA (pki-root engine, self-signed, 10yr) ==="
+VAULT secrets enable -path=pki-root pki 2>/dev/null || true
+VAULT secrets tune -max-lease-ttl=87600h pki-root
+
+if ! VAULT read pki-root/issuer/zero-trust-root > /dev/null 2>&1; then
+  VAULT write -field=certificate pki-root/root/generate/internal \
+    common_name="Zero Trust Root CA" \
+    issuer_name="zero-trust-root" \
+    ttl=87600h > "$PKI_DIR/root-ca.crt"
+  info "  Root CA created"
+else
+  info "  Root CA already exists, fetching..."
+  VAULT read -field=certificate pki-root/issuer/zero-trust-root > "$PKI_DIR/root-ca.crt"
+fi
+
+VAULT write pki-root/config/urls \
+  issuing_certificates="http://vault:8200/v1/pki-root/ca" \
+  crl_distribution_points="http://vault:8200/v1/pki-root/crl" 2>/dev/null || true
+
+# --- 3. RA Intermediate CA ---
+info "=== 3. RA Intermediate CA (pki-int engine, 5yr) ==="
+VAULT secrets enable -path=pki-int pki 2>/dev/null || true
+VAULT secrets tune -max-lease-ttl=43800h pki-int
+
+if ! VAULT read pki-int/issuer/zero-trust-ra > /dev/null 2>&1; then
+  VAULT write -format=json pki-int/intermediate/generate/internal \
+    common_name="Zero Trust RA Intermediate CA" \
+    issuer_name="zero-trust-ra" \
+    ttl=43800h > "$PKI_DIR/intermediate.json"
+
+  python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate.json'));print(d['data']['csr'])" > "$PKI_DIR/intermediate.csr"
+
+  VAULT write -format=json pki-root/root/sign-intermediate \
+    csr=- \
+    format=pem_bundle \
+    ttl=43800h < "$PKI_DIR/intermediate.csr" > "$PKI_DIR/intermediate-signed.json"
+
+  python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate-signed.json'));print(d['data']['certificate'])" > "$PKI_DIR/ra-intermediate.crt"
+  VAULT write pki-int/intermediate/set-signed certificate=- < "$PKI_DIR/ra-intermediate.crt"
+  info "  RA Intermediate CA created"
+else
+  info "  RA Intermediate CA already exists, fetching..."
+  VAULT read -field=certificate pki-int/issuer/zero-trust-ra > "$PKI_DIR/ra-intermediate.crt" 2>/dev/null || true
+fi
+
+VAULT write pki-int/config/urls \
+  issuing_certificates="http://vault:8200/v1/pki-int/ca" \
+  crl_distribution_points="http://vault:8200/v1/pki-int/crl" 2>/dev/null || true
+
+# --- 4. Create roles ---
+info "=== 4. Create PKI roles ==="
+VAULT write pki-int/roles/server-cert \
+  allow_any_name=true \
+  max_ttl=730h \
+  ttl=730h \
+  key_type=ec \
+  key_bits=256 \
+  server_flag=true \
+  client_flag=false 2>/dev/null || info "  Role 'server-cert' already exists"
+
+VAULT write pki-int/roles/client-cert \
+  allow_any_name=true \
+  max_ttl=730h \
+  ttl=730h \
+  key_type=ec \
+  key_bits=256 \
+  server_flag=false \
+  client_flag=true 2>/dev/null || info "  Role 'client-cert' already exists"
+
+# --- 5. Issue server cert ---
+info "=== 5. Issue server cert ==="
+VAULT write -format=json pki-int/issue/server-cert \
+  common_name="localhost" \
+  alt_names="localhost,envoy,backend,protected-api,ext-authz" \
+  ip_sans="127.0.0.1" \
+  ttl=730h > "$PKI_DIR/server.json"
+
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/server.json'));print(d['data']['certificate'])" > "$PKI_DIR/server.crt"
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/server.json'));print(d['data']['private_key'])" > "$PKI_DIR/server.key"
+info "  Server cert issued"
+
+# --- 6. Issue client cert ---
+info "=== 6. Issue client cert ==="
+VAULT write -format=json pki-int/issue/client-cert \
+  common_name="demo-client" \
+  ttl=730h > "$PKI_DIR/client.json"
+
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['data']['certificate'])" > "$PKI_DIR/client.crt"
+python3 -c "import json,sys;d=json.load(open('$PKI_DIR/client.json'));print(d['data']['private_key'])" > "$PKI_DIR/client.key"
+info "  Client cert issued"
+
+# --- 7. Extract issuing CA ---
+info "=== 7. Extract issuing CA chain ==="
+python3 -c "
+import json
+d = json.load(open('$PKI_DIR/server.json'))
+issuing_ca = d['data']['issuing_ca']
+ca_chain = d['data']['ca_chain']
+with open('$PKI_DIR/issuing-ca.crt', 'w') as f:
+    f.write(issuing_ca.strip() + '\n')
+with open('$PKI_DIR/ca-chain.crt', 'w') as f:
+    for cert in ca_chain:
+        f.write(cert.strip() + '\n')
+"
+
+python3 -c "
+import json
+d = json.load(open('$PKI_DIR/client.json'))
+client_issuing_ca = d['data']['issuing_ca']
+with open('$PKI_DIR/client-issuing-ca.crt', 'w') as f:
+    f.write(client_issuing_ca.strip() + '\n')
+"
+
+# --- 8. Build chain files ---
+info "=== 8. Build chain files ==="
+cat "$PKI_DIR/server.crt" > "$PKI_DIR/server-chain.crt"
+echo "" >> "$PKI_DIR/server-chain.crt"
+cat "$PKI_DIR/issuing-ca.crt" >> "$PKI_DIR/server-chain.crt"
+
+cat "$PKI_DIR/client.crt" > "$PKI_DIR/client-chain.crt"
+echo "" >> "$PKI_DIR/client-chain.crt"
+cat "$PKI_DIR/client-issuing-ca.crt" >> "$PKI_DIR/client-chain.crt"
+
+# --- 9. Deploy to envoy/certs/ ---
+info "=== 9. Deploy certificates to envoy/certs/ ==="
+cp "$PKI_DIR/server-chain.crt" "$CERTS_DIR/server-chain.crt"
+cp "$PKI_DIR/server.crt"       "$CERTS_DIR/server.crt"
+cp "$PKI_DIR/server.key"       "$CERTS_DIR/server.key"
+cp "$PKI_DIR/root-ca.crt"      "$CERTS_DIR/root-ca.crt"
+cp "$PKI_DIR/ca-chain.crt"     "$CERTS_DIR/ca-chain.crt"
+cp "$PKI_DIR/issuing-ca.crt"   "$CERTS_DIR/intermediate-ca.crt"
+cp "$PKI_DIR/client-chain.crt" "$CERTS_DIR/client-chain.crt"
+cp "$PKI_DIR/client.crt"       "$CERTS_DIR/client.crt"
+cp "$PKI_DIR/client.key"       "$CERTS_DIR/client.key"
+
+# Also deploy to trust directory for Envoy
+cp "$PKI_DIR/root-ca.crt"      "$ENVOY_TRUST_DIR/root-ca.crt"
+cp "$PKI_DIR/ca-chain.crt"     "$ENVOY_TRUST_DIR/intermediate-ca.crt"
+
+# Legacy compatibility: also copy to tls.crt/tls.key
+cp "$PKI_DIR/server-chain.crt" "$CERTS_DIR/tls.crt"
+cp "$PKI_DIR/server.key"       "$CERTS_DIR/tls.key"
+cp "$PKI_DIR/root-ca.crt"      "$CERTS_DIR/ca.crt"
+
+info "  Certificates deployed to $CERTS_DIR/"
+
+# --- 10. Compute thumbprint ---
+info "=== 10. Compute SHA-256 thumbprint ==="
+THUMBPRINT=$(openssl x509 -in "$PKI_DIR/client.crt" -outform DER | sha256sum | cut -d' ' -f1)
+MISMATCH_THUMBPRINT="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+info "  Client cert thumbprint: $THUMBPRINT"
+
+# --- 11. Generate realm-export.json with correct thumbprint ---
+info "=== 11. Generate realm-export.json ==="
+TEMPLATE="$KEYCLOAK_DIR/realm-export.json.template"
+if [ -f "$TEMPLATE" ]; then
+  sed "s/__CLIENT_CERT_THUMBPRINT__/$THUMBPRINT/g; s/__CLIENT_MISMATCH_THUMBPRINT__/$MISMATCH_THUMBPRINT/g" \
+    "$TEMPLATE" > "$KEYCLOAK_DIR/realm-export.json"
+  info "  Generated realm-export.json with correct thumbprint"
+else
+  info "  Template not found at $TEMPLATE, skipping realm generation"
+fi
+
+# --- 12. Update Keycloak thumbprint via Admin REST API ---
+info "=== 12. Update Keycloak thumbprint ==="
+if [ -f "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" ]; then
+  python3 "$VAULT_SCRIPTS/update_keycloak_thumbprint.py" "$THUMBPRINT" && \
+    info "  Keycloak thumbprint updated" || \
+    info "  WARN: Keycloak thumbprint update failed (may need manual update)"
+else
+  info "  update_keycloak_thumbprint.py not found, skipping"
+fi
+
+info "=== PKI generation complete ==="

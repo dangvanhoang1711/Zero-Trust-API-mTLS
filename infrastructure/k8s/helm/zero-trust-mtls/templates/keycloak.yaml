@@ -1,0 +1,64 @@
+{{- if .Values.keycloak.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.keycloak.serviceName }}
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+spec:
+  ports:
+    - name: http
+      port: {{ .Values.keycloak.servicePort }}
+      targetPort: {{ .Values.keycloak.containerPort }}
+  selector:
+    app: keycloak
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  labels:
+    {{- include "zero-trust-mtls.labels" . | nindent 4 }}
+    app: keycloak
+spec:
+  replicas: {{ .Values.keycloak.replicas }}
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: "{{ .Values.keycloak.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["start-dev"]
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: "{{ .Values.keycloak.env.KEYCLOAK_ADMIN }}"
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: "{{ .Values.keycloak.env.KEYCLOAK_ADMIN_PASSWORD }}"
+            - name: KC_DB
+              value: "{{ .Values.keycloak.env.KC_DB }}"
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://{{ .Values.postgres.serviceName }}:{{ .Values.postgres.port }}/{{ .Values.postgres.env.POSTGRES_DB }}"
+            - name: KC_DB_USERNAME
+              value: "{{ .Values.postgres.env.POSTGRES_USER }}"
+            - name: KC_DB_PASSWORD
+              value: "{{ .Values.postgres.env.POSTGRES_PASSWORD }}"
+            - name: KC_HOSTNAME_STRICT
+              value: "{{ .Values.keycloak.env.KC_HOSTNAME_STRICT }}"
+            - name: KC_HTTP_ENABLED
+              value: "{{ .Values.keycloak.env.KC_HTTP_ENABLED }}"
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: "{{ .Values.keycloak.env.KC_BOOTSTRAP_ADMIN_USERNAME }}"
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: "{{ .Values.keycloak.env.KC_BOOTSTRAP_ADMIN_PASSWORD }}"
+            - name: KC_PROXY_HEADERS
+              value: "{{ .Values.keycloak.env.KC_PROXY_HEADERS }}"
+          ports:
+            - containerPort: {{ .Values.keycloak.containerPort }}
+{{- end }}

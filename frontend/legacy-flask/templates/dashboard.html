@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;">
+  <div>
+    <h2 style="font-size:26px;font-weight:700;color:#e2e8f0;">
+      Xin chào, <span style="background:linear-gradient(135deg,#60a5fa,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">{{ username }}</span>
+    </h2>
+    <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+      {% for role in roles %}
+        <span class="tag {{ 'tag-admin' if role == 'admin' else 'tag-user' }}">{{ role }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">Đăng xuất</a>
+</div>
+
+<!-- JWT Info -->
+<div class="card">
+  <h3>🎫 JWT Token Info</h3>
+  <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">
+    <strong>Issuer:</strong> <code>{{ payload.iss }}</code><br>
+    <strong>Subject (sub):</strong> <code>{{ payload.sub }}</code><br>
+    <strong>Audience:</strong> <code>{{ payload.aud }}</code><br>
+    <strong>Scope:</strong> <code>{{ payload.scope }}</code><br>
+    <strong>Roles:</strong> <code>{{ roles | join(', ') }}</code><br>
+  </div>
+</div>
+
+<!-- API Demo -->
+<div class="card">
+  <h3>🔌 API Demo — Kiểm tra phân quyền</h3>
+  <p style="font-size:14px;color:#64748b;margin-bottom:16px;">
+    Nhấn nút để gọi API tương ứng. Kết quả sẽ hiển thị bên dưới.
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <button class="btn btn-outline btn-sm" onclick="callApi('public')">🌐 Public</button>
+    <button class="btn btn-outline btn-sm" onclick="callApi('profile')">👤 Profile</button>
+    <button class="btn btn-outline btn-sm" onclick="callApi('user-data')">📄 User Data</button>
+    <button class="btn btn-outline btn-sm" onclick="callApi('admin-data')">🔐 Admin Data</button>
+    <button class="btn btn-outline btn-sm" onclick="callApi('jwt-info')">🎫 JWT Info</button>
+  </div>
+  <div id="apiResult" style="display:none;background:rgba(8,12,24,0.6);border-radius:10px;padding:16px;">
+    <div id="apiStatus" style="font-size:13px;font-weight:600;margin-bottom:8px;"></div>
+    <pre id="apiBody" style="margin:0;"></pre>
+  </div>
+</div>
+
+<!-- User info -->
+<div class="card">
+  <h3>📋 Thông tin tài khoản</h3>
+  <div style="font-size:14px;color:#94a3b8;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tr><td style="padding:6px 0;color:#64748b;">Tên đăng nhập</td><td><code>{{ username }}</code></td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">User ID (sub)</td><td><code>{{ payload.sub }}</code></td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Vai trò</td><td><code>{{ roles | join(', ') }}</code></td></tr>
+      <tr><td style="padding:6px 0;color:#64748b;">Phạm vi (scope)</td><td><code>{{ scopes | join(', ') }}</code></td></tr>
+    </table>
+  </div>
+</div>
+
+<script>
+async function callApi(endpoint) {
+  const resultDiv = document.getElementById('apiResult');
+  const statusDiv = document.getElementById('apiStatus');
+  const bodyDiv = document.getElementById('apiBody');
+  resultDiv.style.display = 'block';
+  statusDiv.innerHTML = '<span class="spinner"></span> Đang gọi API...';
+  bodyDiv.textContent = '';
+  try {
+    const r = await fetch('/api/' + endpoint);
+    const data = await r.json();
+    statusDiv.innerHTML = `<span style="color:${r.ok ? '#22c55e' : '#ef4444'};">HTTP ${r.status} ${r.ok ? '✅' : '❌'}</span>`;
+    bodyDiv.textContent = JSON.stringify(data, null, 2);
+  } catch(e) {
+    statusDiv.innerHTML = '<span style="color:#ef4444;">Lỗi kết nối</span>';
+    bodyDiv.textContent = e.message;
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,29 @@
+version: "1"
+default_action: "allow"
+
+rules:
+  # Protected API requires api:read scope + rate limit
+  - name: protected-api-read
+    match:
+      path_prefix: "/protected"
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    conditions:
+      required_scopes:
+        - "api:read"
+    rate_limit:
+      enabled: true
+      max_requests: 30
+      window: "1m"
+      identity_by: "sub"
+
+  # Admin paths explicitly denied (zero-trust: default-deny for admin)
+  - name: deny-admin
+    match:
+      path_prefix: "/admin"
+    action: "deny"
+
+  # Secrets paths explicitly denied
+  - name: deny-secrets
+    match:
+      path_prefix: "/secrets"
+    action: "deny"

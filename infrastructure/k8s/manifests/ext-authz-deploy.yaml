@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ext-authz-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ext-authz-service
+  template:
+    metadata:
+      labels:
+        app: ext-authz-service
+    spec:
+      containers:
+      - name: auth-agent
+        image: ext-authz:go
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5000
+        env:
+        - name: FORCE_ALLOW_FOR_DEMO
+          value: "false"
+        - name: TZ
+          value: Asia/Ho_Chi_Minh
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ext-authz-service
+spec:
+  selector:
+    app: ext-authz-service
+  ports:
+  - port: 5000
+    targetPort: 5000

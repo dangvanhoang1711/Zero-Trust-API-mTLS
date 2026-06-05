@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28-latest
+        ports:
+        - containerPort: 443
+        - containerPort: 9901
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/envoy/envoy.yaml
+          subPath: envoy.yaml
+        - name: envoy-cert-volume
+          mountPath: /etc/envoy/tls
+          readOnly: true
+        - name: envoy-client-trust
+          mountPath: /etc/envoy/tls/trust
+          readOnly: true
+      volumes:
+      - name: config-volume
+        configMap:
+          name: envoy-config
+      - name: envoy-cert-volume
+        secret:
+          secretName: envoy-server-tls
+      - name: envoy-client-trust
+        secret:
+          secretName: envoy-client-trust
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: envoy-service
+spec:
+  selector:
+    app: envoy
+  ports:
+  - protocol: TCP
+    port: 443
+    targetPort: 443
+  type: ClusterIP

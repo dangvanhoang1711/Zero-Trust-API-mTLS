@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.env
+*.local
+envoy/certs/*.key
+vault/artifacts/*
+!vault/artifacts/.gitkeep
+*.log
+.bin/

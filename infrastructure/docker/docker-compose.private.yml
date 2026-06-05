@@ -1,0 +1,99 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
+      KC_HTTP_RELATIVE_PATH: "/"
+      KC_HOSTNAME: "localhost"
+    volumes:
+      - ../../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
+    command: start-dev --import-realm
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - private-net
+
+  vault:
+    image: hashicorp/vault:1.15
+    ports:
+      - "8200:8200"
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
+      VAULT_ADDR: "http://0.0.0.0:8200"
+    entrypoint: vault server -dev -dev-root-token-id=root
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8200/v1/sys/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - private-net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - private-net
+
+  ext-authz:
+    build: ../../ext_authz
+    ports:
+      - "50051:50051"
+    volumes:
+      - ../../ext_authz/internal/config:/etc/ext-authz/config
+    environment:
+      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "zero-trust"
+      REDIS_URL: "redis://redis:6379"
+      AUTHZ_POLICY_PATH: "/etc/ext-authz/config/authz-policy.yaml"
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
+      LISTEN_ADDR: "0.0.0.0:50051"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - private-net
+
+  pki-init:
+    image: hashicorp/vault:1.15
+    depends_on:
+      vault:
+        condition: service_healthy
+    volumes:
+      - ../../vault/scripts:/scripts
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5 &&
+        echo '=== PKI Init Starting ===' &&
+        chmod +x /scripts/gen-pki-vault.sh &&
+        /scripts/gen-pki-vault.sh &&
+        echo '=== PKI Init Complete ==='
+      "
+    networks:
+      - private-net
+
+networks:
+  private-net:
+    driver: bridge
