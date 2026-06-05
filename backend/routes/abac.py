@@ -69,6 +69,10 @@ def policies():
             "userMatch": matched,
         })
 
+    relevant_roles = [r for r in roles if r in ("admin", "user")] + ["guest"] if not any(r in roles for r in ("admin", "user")) else [r for r in roles if r in ("admin", "user")]
+    is_admin = "admin" in roles
+    privilege = "HIGH" if is_admin else "LOW"
+
     return jsonify({
         "version": policy.get("version", "1"),
         "default_action": policy.get("default_action", "allow"),
@@ -78,8 +82,11 @@ def policies():
             "iss": claims.get("iss"),
             "aud": claims.get("aud"),
             "roles": roles,
+            "relevantRoles": relevant_roles,
+            "privilege": privilege,
             "preferred_username": claims.get("preferred_username"),
             "email": claims.get("email"),
+            "emailVerified": claims.get("email_verified"),
         },
     })
 

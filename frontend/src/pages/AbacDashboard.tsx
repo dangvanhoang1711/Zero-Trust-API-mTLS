@@ -34,8 +34,11 @@ interface PolicyResponse {
     iss?: string;
     aud?: string | string[];
     roles: string[];
+    relevantRoles: string[];
+    privilege: string;
     preferred_username?: string;
     email?: string;
+    emailVerified?: boolean;
   };
 }
 
@@ -152,6 +155,7 @@ export default function AbacDashboard() {
 
   const jwtPayload = rawToken ? decodeJwt(rawToken) : null;
   const userRoles = policy?.user?.roles ?? jwtPayload?.realm_access?.roles ?? [];
+  const relevantRoles = policy?.user?.relevantRoles ?? [];
 
   return (
     <>
@@ -170,16 +174,23 @@ export default function AbacDashboard() {
 
       <div className="card">
         <h2>👤 User Information</h2>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+          <span className={`badge badge-privilege-${(policy?.user?.privilege ?? 'LOW').toLowerCase()}`}>
+            {(policy?.user?.privilege ?? 'LOW') === 'HIGH' ? '🔴 ADMIN PRIVILEGE' : '🟢 STANDARD USER'}
+          </span>
+          <span style={{ opacity: 0.6 }}>|</span>
+          <span className={`badge badge-${(policy?.user?.privilege ?? 'LOW').toLowerCase() === 'high' ? 'admin' : 'user'}`}>
+            Role: {(policy?.user?.relevantRoles ?? ['guest']).join(', ')}
+          </span>
+        </div>
         <table className="abac-table">
           <tbody>
             <tr><td className="label">Username</td><td>{policy?.user?.preferred_username ?? jwtPayload?.preferred_username ?? '—'}</td></tr>
-            <tr><td className="label">Email</td><td>{policy?.user?.email ?? jwtPayload?.email ?? '—'}</td></tr>
+            <tr><td className="label">Email</td><td>{policy?.user?.email ?? jwtPayload?.email ?? '—'} {policy?.user?.emailVerified ? '✓ verified' : ''}</td></tr>
             <tr><td className="label">Subject (sub)</td><td className="mono">{policy?.user?.sub ?? jwtPayload?.sub ?? '—'}</td></tr>
-            <tr><td className="label">Issuer (iss)</td><td className="mono">{policy?.user?.iss ?? jwtPayload?.iss ?? '—'}</td></tr>
-            <tr><td className="label">Audience (aud)</td><td className="mono">{JSON.stringify(policy?.user?.aud ?? jwtPayload?.aud ?? '—')}</td></tr>
-            <tr><td className="label">Roles</td>
+            <tr><td className="label">All Keycloak Roles</td>
               <td>{userRoles.length > 0
-                ? userRoles.map(r => <span key={r} className={`badge ${r === 'admin' ? 'badge-admin' : 'badge-user'}`}>{r}</span>)
+                ? userRoles.map(r => <span key={r} className={`badge ${r === 'admin' ? 'badge-admin' : r === 'user' ? 'badge-user' : 'badge-none'}`}>{r}</span>)
                 : <span className="badge badge-none">none</span>}
               </td>
             </tr>
@@ -326,8 +337,8 @@ export default function AbacDashboard() {
                     <td>{row.role}</td>
                     <td>
                       {hasRole
-                        ? <span className="badge badge-allow">✓ {userRoles.join(', ') || 'guest'}</span>
-                        : <span className="badge badge-deny">✗ {userRoles.join(', ') || 'none'}</span>}
+                        ? <span className="badge badge-allow">✓ {relevantRoles.join(', ') || 'guest'}</span>
+                        : <span className="badge badge-deny">✗ {relevantRoles.join(', ') || 'none'}</span>}
                     </td>
                   </tr>
                 );
