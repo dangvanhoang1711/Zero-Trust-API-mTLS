@@ -111,6 +111,16 @@ services:
         set -e
         apk add --no-cache python3 openssl > /dev/null 2>&1
 
+        echo '=== PKI Init: wait for Vault ==='
+        for try in 1 2 3 4 5 6 7 8 9 10; do
+          if vault status > /dev/null 2>&1; then
+            echo 'Vault ready'
+            break
+          fi
+          echo 'Waiting for Vault...'
+          sleep 3
+        done
+
         echo '=== PKI Init: engines ==='
         vault secrets enable -path=pki-root pki 2>/dev/null || true
         vault secrets tune -max-lease-ttl=87600h pki-root
