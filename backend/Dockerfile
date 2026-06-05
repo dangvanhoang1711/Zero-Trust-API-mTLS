@@ -12,6 +12,6 @@ COPY services/ ./services/
 COPY config/ ./config/
 COPY requirements.txt .
 
-EXPOSE 8080
+EXPOSE 8443
 
-CMD ["python3", "-m", "gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "app:create_app()"]
+CMD ["python3", "-m", "gunicorn", "-w", "4", "-b", "0.0.0.0:8443", "--certfile=/certs/tls.crt", "--keyfile=/certs/tls.key", "app:create_app()"]

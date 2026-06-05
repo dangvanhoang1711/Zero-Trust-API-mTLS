@@ -15,9 +15,11 @@ services:
   backend:
     build: ../../backend
     ports:
-      - "8000:8080"
+      - "8000:8443"
+    volumes:
+      - ../../envoy/certs:/certs
     environment:
-      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_URL: "https://keycloak:8443"
       KEYCLOAK_REALM: "zero-trust"
       KEYCLOAK_CLIENT_ID: "web-app"
       KEYCLOAK_CLIENT_SECRET: ""
@@ -25,9 +27,14 @@ services:
       KEYCLOAK_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
       KEYCLOAK_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
+      REQUESTS_CA_BUNDLE: "/certs/ca-chain.crt"
+      GUNICORN_CERTFILE: "/certs/tls.crt"
+      GUNICORN_KEYFILE: "/certs/tls.key"
     depends_on:
       keycloak:
         condition: service_healthy
+      pki-init:
+        condition: service_completed_successfully
     networks:
       - private-net
 

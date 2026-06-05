@@ -3,21 +3,28 @@ services:
     image: quay.io/keycloak/keycloak:26.0
     ports:
       - "8080:8080"
+      - "8443:8443"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
       KC_HTTP_RELATIVE_PATH: "/"
       KC_HOSTNAME: "keycloak"
+      KC_HTTPS_CERTIFICATE_FILE: "/certs/tls.crt"
+      KC_HTTPS_CERTIFICATE_KEY_FILE: "/certs/tls.key"
       JAVA_OPTS: "-Xms64m -Xmx384m -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m"
     volumes:
       - ../../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
-    command: start-dev --import-realm
+      - ../../envoy/certs:/certs
+    command: start-dev --import-realm --https-port=8443
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
+    depends_on:
+      pki-init:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -73,9 +80,9 @@ services:
       - ../../ext_authz/internal/config:/etc/ext-authz/config
       - ../../envoy/certs:/etc/ext-authz/certs
     environment:
-      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_URL: "https://keycloak:8443"
       KEYCLOAK_REALM: "zero-trust"
-      JWT_ISSUER: "http://keycloak:8080/realms/zero-trust"
+      JWT_ISSUER: "https://keycloak:8443/realms/zero-trust"
       JWT_AUDIENCE: "api-gateway"
       REDIS_URL: "redis://redis:6379"
       AUTHZ_POLICY_FILE: "/etc/ext-authz/config/authz-policy.yaml"
@@ -84,6 +91,7 @@ services:
       LISTEN_ADDR: "0.0.0.0:50051"
       TLS_CERT_FILE: "/etc/ext-authz/certs/tls.crt"
       TLS_KEY_FILE: "/etc/ext-authz/certs/tls.key"
+      SSL_CERT_FILE: "/etc/ext-authz/certs/ca-chain.crt"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -102,8 +110,6 @@ services:
     image: hashicorp/vault:1.15
     depends_on:
       vault:
-        condition: service_healthy
-      keycloak:
         condition: service_healthy
     volumes:
       - ../../envoy/certs:/certs
@@ -172,7 +178,7 @@ services:
         vault write pki-int/roles/client-cert allow_any_name=true max_ttl=730h ttl=730h key_type=ec key_bits=256 client_flag=true
 
         echo "=== PKI Init: server cert ==="
-        vault write -format=json pki-int/issue/server-cert common_name=localhost alt_names="localhost,envoy,backend,ext-authz" ip_sans="127.0.0.1" ttl=730h > /tmp/server.json
+        vault write -format=json pki-int/issue/server-cert common_name=localhost alt_names="localhost,envoy,backend,ext-authz,keycloak" ip_sans="127.0.0.1" ttl=730h > /tmp/server.json
 
         python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"certificate\"])" > /certs/tls.crt
         python3 -c "import json;d=json.load(open(\"/tmp/server.json\"));print(d[\"data\"][\"private_key\"])" > /certs/tls.key

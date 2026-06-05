@@ -13,13 +13,16 @@ services:
   backend:
     build: ../../backend
     ports:
-      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - ../../envoy/certs:/certs
     environment:
-      KEYCLOAK_URL: "${KEYCLOAK_URL:-http://keycloak:8080}"
+      KEYCLOAK_URL: "${KEYCLOAK_URL:-https://keycloak:8443}"
       KEYCLOAK_REALM: "zero-trust"
       KEYCLOAK_CLIENT_ID: "api-gateway"
       KEYCLOAK_CLIENT_SECRET: "${KEYCLOAK_CLIENT_SECRET:-}"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
+      REQUESTS_CA_BUNDLE: "/certs/ca-chain.crt"
     depends_on:
       - envoy
     networks:

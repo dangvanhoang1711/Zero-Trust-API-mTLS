@@ -129,6 +129,14 @@ static_resources:
     - name: backend_service
       type: STRICT_DNS
       connect_timeout: 0.5s
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/certs/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: backend_service
         endpoints:
@@ -137,11 +145,19 @@ static_resources:
                   address:
                     socket_address:
                       address: backend
-                      port_value: 8080
+                      port_value: 8443
 
     - name: protected_api_service
       type: STRICT_DNS
       connect_timeout: 0.5s
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/certs/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: protected_api_service
         endpoints:
@@ -150,11 +166,19 @@ static_resources:
                   address:
                     socket_address:
                       address: backend
-                      port_value: 8080
+                      port_value: 8443
 
     - name: keycloak_service
       type: STRICT_DNS
       connect_timeout: 0.5s
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: /etc/envoy/certs/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: keycloak_service
         endpoints:
@@ -163,7 +187,7 @@ static_resources:
                   address:
                     socket_address:
                       address: keycloak
-                      port_value: 8080
+                      port_value: 8443
 
 admin:
   access_log_path: /tmp/admin_access.log
