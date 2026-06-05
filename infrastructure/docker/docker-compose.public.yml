@@ -34,8 +34,6 @@ services:
       - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
       - ../../envoy/certs:/etc/envoy/certs
     command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --log-level debug
-    depends_on:
-      - backend
     networks:
       - public-net
 
