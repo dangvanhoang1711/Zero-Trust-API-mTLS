@@ -14,3 +14,4 @@ vault/artifacts/*
 project_root/
 .tmp/
 .pki/
+envoy/certs/vault-creds.json
