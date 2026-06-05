@@ -1,0 +1,47 @@
+include:
+  - docker-compose.private.yml
+
+services:
+  frontend:
+    build: ../../frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - private-net
+
+  backend:
+    build: ../../backend
+    ports:
+      - "8000:8080"
+    environment:
+      KEYCLOAK_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "zero-trust"
+      KEYCLOAK_CLIENT_ID: "web-app"
+      KEYCLOAK_CLIENT_SECRET: ""
+      SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - private-net
+
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    ports:
+      - "443:10000"
+      - "10001:10001"
+      - "9901:9901"
+    volumes:
+      - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
+      - ../../envoy/certs:/etc/envoy/tls
+    command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --log-level debug
+    depends_on:
+      backend:
+        condition: service_started
+      ext-authz:
+        condition: service_started
+    networks:
+      - private-net

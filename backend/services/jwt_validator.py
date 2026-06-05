@@ -3,8 +3,8 @@ import time
 import base64
 
 import requests
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.exceptions import InvalidSignature
 
 from flask import current_app
@@ -60,7 +60,10 @@ class JWKSValidator:
         signature = self._urlsafe_b64decode(parts[2])
 
         try:
-            public_key.verify(signature, message, ec.ECDSA(ec.SECP256R1()))
+            r = int.from_bytes(signature[:32], "big")
+            s = int.from_bytes(signature[32:], "big")
+            der_sig = utils.encode_dss_signature(r, s)
+            public_key.verify(der_sig, message, ec.ECDSA(hashes.SHA256()))
         except InvalidSignature:
             raise ValueError("Token signature verification failed")
 
