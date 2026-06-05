@@ -108,7 +108,7 @@ services:
     working_dir: /project
     entrypoint: >
       /bin/sh -c "
-        VAULT_TOKEN=root apk add --no-cache python3 py3-pip openssl curl > /dev/null 2>&1
+        apk add --no-cache python3 py3-pip openssl curl > /dev/null 2>&1
         pip3 install --quiet requests > /dev/null 2>&1
         echo '=== PKI Init Starting ===' &&
         chmod +x /project/vault/scripts/gen-pki-vault.sh &&
@@ -119,31 +119,6 @@ services:
       resources:
         limits:
           memory: 256M
-    networks:
-      - private-net
-
-  pki-init:
-    image: hashicorp/vault:1.15
-    depends_on:
-      vault:
-        condition: service_healthy
-    volumes:
-      - ../../vault/scripts:/scripts
-    environment:
-      VAULT_ADDR: "http://vault:8200"
-      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
-    entrypoint: >
-      /bin/sh -c "
-        sleep 5 &&
-        echo '=== PKI Init Starting ===' &&
-        chmod +x /scripts/gen-pki-vault.sh &&
-        /scripts/gen-pki-vault.sh &&
-        echo '=== PKI Init Complete ==='
-      "
-    deploy:
-      resources:
-        limits:
-          memory: 128M
     networks:
       - private-net
 
