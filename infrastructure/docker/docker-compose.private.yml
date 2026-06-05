@@ -127,7 +127,8 @@ services:
 
         vault write -field=certificate pki-root/root/generate/internal common_name="Zero Trust Root CA" ttl=87600h > /certs/root-ca.crt
 
-        vault secrets enable -path=pki-int pki 2>/dev/null || true
+        vault secrets disable pki-int 2>/dev/null || true
+        vault secrets enable -path=pki-int pki
         vault secrets tune -max-lease-ttl=43800h pki-int
 
         vault write -format=json pki-int/intermediate/generate/internal common_name="Zero Trust Intermediate CA" ttl=43800h > /tmp/int.json
