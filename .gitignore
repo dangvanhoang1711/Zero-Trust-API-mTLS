@@ -13,4 +13,4 @@ vault/artifacts/*
 *.pem
 project_root/
 .tmp/
-
+.pki/

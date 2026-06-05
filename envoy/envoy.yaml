@@ -5,10 +5,6 @@ static_resources:
         socket_address:
           address: 0.0.0.0
           port_value: 10001
-      listener_filters:
-        - name: envoy.filters.listener.tls_inspector
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
       filter_chains:
         - transport_socket:
             name: envoy.transport_sockets.tls
@@ -17,14 +13,14 @@ static_resources:
               common_tls_context:
                 tls_certificates:
                   - certificate_chain:
-                      filename: /etc/envoy/tls/tls.crt
+                      filename: /etc/envoy/certs/tls.crt
                     private_key:
-                      filename: /etc/envoy/tls/tls.key
+                      filename: /etc/envoy/certs/tls.key
           filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: baseline_http
+                stat_prefix: baseline_https
                 route_config:
                   name: baseline_route
                   virtual_hosts:
@@ -32,49 +28,13 @@ static_resources:
                       domains: ["*"]
                       routes:
                         - match:
-                            prefix: "/"
+                            prefix: "/health"
                           route:
                             cluster: backend_service
-                http_filters:
-                  - name: envoy.filters.http.router
-                    typed_config:
-                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-
-    - name: keycloak_tls_listener
-      address:
-        socket_address:
-          address: 0.0.0.0
-          port_value: 18080
-      listener_filters:
-        - name: envoy.filters.listener.tls_inspector
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
-      filter_chains:
-        - transport_socket:
-            name: envoy.transport_sockets.tls
-            typed_config:
-              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
-              common_tls_context:
-                tls_certificates:
-                  - certificate_chain:
-                      filename: /etc/envoy/tls/tls.crt
-                    private_key:
-                      filename: /etc/envoy/tls/tls.key
-          filters:
-            - name: envoy.filters.network.http_connection_manager
-              typed_config:
-                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: keycloak_http
-                route_config:
-                  name: keycloak_route
-                  virtual_hosts:
-                    - name: keycloak_backend
-                      domains: ["*"]
-                      routes:
                         - match:
                             prefix: "/"
                           route:
-                            cluster: keycloak_service
+                            cluster: backend_service
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
@@ -98,12 +58,12 @@ static_resources:
               common_tls_context:
                 tls_certificates:
                   - certificate_chain:
-                      filename: /etc/envoy/tls/tls.crt
+                      filename: /etc/envoy/certs/tls.crt
                     private_key:
-                      filename: /etc/envoy/tls/tls.key
+                      filename: /etc/envoy/certs/tls.key
                 validation_context:
                   trusted_ca:
-                    filename: /etc/envoy/tls/trust/intermediate-ca.crt
+                    filename: /etc/envoy/certs/trust/intermediate-ca.crt
           filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
@@ -155,7 +115,7 @@ static_resources:
           common_tls_context:
             validation_context:
               trusted_ca:
-                filename: /etc/envoy/tls/trust/intermediate-ca.crt
+                filename: /etc/envoy/certs/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: ext_authz_service
         endpoints:
@@ -182,14 +142,6 @@ static_resources:
     - name: protected_api_service
       type: STRICT_DNS
       connect_timeout: 0.5s
-      transport_socket:
-        name: envoy.transport_sockets.tls
-        typed_config:
-          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
-          common_tls_context:
-            validation_context:
-              trusted_ca:
-                filename: /etc/envoy/tls/trust/intermediate-ca.crt
       load_assignment:
         cluster_name: protected_api_service
         endpoints:

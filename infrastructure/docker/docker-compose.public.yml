@@ -15,10 +15,10 @@ services:
     ports:
       - "8080:8080"
     environment:
-      KEYCLOAK_URL: "http://<private-ip-of-ec2-2>:8080"
+      KEYCLOAK_URL: "${KEYCLOAK_URL:-http://keycloak:8080}"
       KEYCLOAK_REALM: "zero-trust"
       KEYCLOAK_CLIENT_ID: "api-gateway"
-      KEYCLOAK_CLIENT_SECRET: ""
+      KEYCLOAK_CLIENT_SECRET: "${KEYCLOAK_CLIENT_SECRET:-}"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
     depends_on:
       - envoy
@@ -29,14 +29,11 @@ services:
     image: envoyproxy/envoy:v1.31-latest
     ports:
       - "443:10000"
-      - "10001:10001"
-      - "80:10002"
+      - "80:10001"
     volumes:
       - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
       - ../../envoy/certs:/etc/envoy/certs
     command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --log-level debug
-    depends_on:
-      - backend
     networks:
       - public-net
 
