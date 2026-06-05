@@ -57,19 +57,38 @@ def public():
 @api_bp.route("/profile", methods=["GET"])
 @require_jwt
 def profile():
-    return jsonify(g.token_payload)
+    payload = g.token_payload
+    roles = payload.get("realm_access", {}).get("roles", [])
+    return jsonify({
+        "sub": payload.get("sub"),
+        "preferred_username": payload.get("preferred_username"),
+        "email": payload.get("email"),
+        "roles": roles,
+        "iss": payload.get("iss"),
+        "aud": payload.get("aud"),
+        "iat": payload.get("iat"),
+        "exp": payload.get("exp"),
+    })
 
 
 @api_bp.route("/user-data", methods=["GET"])
 @require_role("user")
 def user_data():
+    payload = g.token_payload
+    roles = payload.get("realm_access", {}).get("roles", [])
+    is_admin = "admin" in roles
     return jsonify({
         "message": "User data",
+        "role": "admin" if is_admin else "user",
         "data": {
             "id": "usr_001",
             "name": "Sample User",
             "email": "user@example.com",
+            "roles": roles,
             "items": ["item_a", "item_b", "item_c"],
+            "permissions": ["read"],
+            "server_time_hour": __import__("datetime").datetime.now().hour,
+            "abac_note": "ABAC rule 'user-data-weekday' requires 'user' role",
         },
     })
 
@@ -85,6 +104,8 @@ def admin_data():
             "email": "admin@example.com",
             "permissions": ["read", "write", "delete"],
             "users_managed": 42,
+            "server_time_hour": __import__("datetime").datetime.now().hour,
+            "abac_note": "ABAC rule 'admin-business-hours' requires 'admin' role AND hour between 7-22",
         },
     })
 

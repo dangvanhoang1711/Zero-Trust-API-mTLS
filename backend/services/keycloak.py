@@ -21,6 +21,8 @@ class KeycloakService:
         self._realm = cfg["KEYCLOAK_REALM"]
         self._client_id = cfg["KEYCLOAK_CLIENT_ID"]
         self._client_secret = cfg["KEYCLOAK_CLIENT_SECRET"]
+        self._admin_username = cfg.get("KEYCLOAK_ADMIN_USERNAME", "admin")
+        self._admin_password = cfg.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
 
     def _cache_ttl(self):
         return current_app.config.get("OIDC_DISCOVERY_CACHE_TTL", 300)
@@ -71,14 +73,17 @@ class KeycloakService:
         resp.raise_for_status()
         return resp.json()
 
-    def create_user(self, username, password, email):
+    def create_user(self, username, password, email, first_name=None, last_name=None):
         self._init_from_app()
         admin_token = self._get_admin_token()
         headers = {"Authorization": f"Bearer {admin_token}"}
         payload = {
             "username": username,
             "email": email,
+            "firstName": first_name or username,
+            "lastName": last_name or "User",
             "enabled": True,
+            "emailVerified": True,
             "credentials": [
                 {"type": "password", "value": password, "temporary": False}
             ],
@@ -90,6 +95,12 @@ class KeycloakService:
             timeout=10,
         )
         resp.raise_for_status()
+        user_id = resp.headers.get("Location", "").rstrip("/").split("/")[-1]
+        if user_id:
+            try:
+                self.assign_role(user_id, "user")
+            except Exception:
+                pass
         return resp.status_code == 201
 
     def get_realm_roles(self):
@@ -130,10 +141,14 @@ class KeycloakService:
         return resp.status_code == 204
 
     def _get_admin_token(self):
+        base = self._base_url.rstrip("/")
+        admin_token_url = f"{base}/realms/master/protocol/openid-connect/token"
         payload = {
-            "grant_type": "client_credentials",
+            "grant_type": "password",
+            "username": self._admin_username,
+            "password": self._admin_password,
+            "client_id": "admin-cli",
         }
-        payload.update(self._client_auth_payload())
-        resp = self._session.post(self._token_url(), data=payload, timeout=10)
+        resp = self._session.post(admin_token_url, data=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()["access_token"]

@@ -22,6 +22,7 @@ export default function Layout({ children }: LayoutProps) {
           {authed ? (
             <>
               <Link to="/dashboard">Dashboard</Link>
+              <Link to="/abac">ABAC Dashboard</Link>
               <button onClick={handleLogout}>Logout</button>
             </>
           ) : (

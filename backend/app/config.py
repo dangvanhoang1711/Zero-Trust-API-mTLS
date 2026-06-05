@@ -10,5 +10,7 @@ class Config:
     OIDC_DISCOVERY_URL = os.environ.get("OIDC_DISCOVERY_URL", "")
     JWT_ISSUER = os.environ.get("JWT_ISSUER", "")
     JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", "")
+    KEYCLOAK_ADMIN_USERNAME = os.environ.get("KEYCLOAK_ADMIN_USERNAME", "admin")
+    KEYCLOAK_ADMIN_PASSWORD = os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin")
     OIDC_DISCOVERY_CACHE_TTL = int(os.environ.get("OIDC_DISCOVERY_CACHE_TTL", "300"))
     JWKS_CACHE_TTL = int(os.environ.get("JWKS_CACHE_TTL", "300"))

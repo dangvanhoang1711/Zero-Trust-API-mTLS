@@ -37,11 +37,13 @@ def register():
     username = data.get("username")
     password = data.get("password")
     email = data.get("email")
+    firstName = data.get("firstName", username)
+    lastName = data.get("lastName", "User")
     if not username or not password or not email:
         return jsonify({"error": "username, password, and email are required"}), 400
 
     try:
-        keycloak.create_user(username, password, email)
+        keycloak.create_user(username, password, email, firstName, lastName)
         return jsonify({"message": f"User '{username}' created successfully"}), 201
     except Exception as e:
         return jsonify({"error": "Registration failed", "detail": str(e)}), 400

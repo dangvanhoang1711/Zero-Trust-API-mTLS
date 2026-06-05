@@ -3,6 +3,7 @@ from flask import Flask
 from app.config import Config
 from routes.auth import auth_bp
 from routes.api import api_bp
+from routes.abac import abac_bp
 
 
 def create_app(config_object=None):
@@ -11,6 +12,7 @@ def create_app(config_object=None):
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(abac_bp)
 
     @app.get("/")
     def index():

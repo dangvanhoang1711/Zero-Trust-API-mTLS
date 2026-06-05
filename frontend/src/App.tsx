@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import AbacDashboard from './pages/AbacDashboard';
 
 export default function App() {
   const location = useLocation();
@@ -20,6 +21,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/abac" element={<AbacDashboard />} />
       </Routes>
     </Layout>
   );
