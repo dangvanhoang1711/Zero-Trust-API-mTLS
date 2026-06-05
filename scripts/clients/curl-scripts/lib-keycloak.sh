@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 : "${KEYCLOAK_BASE_URL:=https://localhost:18080}"
 : "${KEYCLOAK_REALM:=zero-trust}"
@@ -12,7 +12,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 : "${DEMO_DPOP_CLIENT_SECRET:=demo-client-dpop-secret}"
 : "${KEYCLOAK_CONNECT_TIMEOUT:=3}"
 : "${KEYCLOAK_MAX_TIME:=8}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 
 wait_for_keycloak() {
   local config_url="$KEYCLOAK_BASE_URL/realms/$KEYCLOAK_REALM/.well-known/openid-configuration"
@@ -67,9 +67,9 @@ api_call_status() {
   local output_file="$2"
 
   : "${BASE_URL:=https://localhost:10000/}"
-  : "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
-  : "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
-  : "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+  : "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+  : "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
+  : "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 
   curl --silent --show-error \
     --connect-timeout "$KEYCLOAK_CONNECT_TIMEOUT" \

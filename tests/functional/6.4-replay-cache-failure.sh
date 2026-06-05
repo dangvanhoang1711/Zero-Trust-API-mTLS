@@ -5,18 +5,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PROJECT_ROOT="$REPO_ROOT"
-DOCKER_COMPOSE_FILE="$REPO_ROOT/../docker-compose.yml"
+DOCKER_COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 
-source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh"
+source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
-: "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+: "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 : "${EXT_AUTHZ_RECOVERY_WAIT_SECONDS:=8}"
+: "${REPLAY_EXPECTED_STATUS_AFTER_RESTART:=200}"
 
 compose() {
-  docker-compose -f "$DOCKER_COMPOSE_FILE" "$@"
+  docker compose -f "$DOCKER_COMPOSE_FILE" "$@"
 }
 
 api_status() {
@@ -50,7 +51,7 @@ wait_for_api_with_token() {
   return 1
 }
 
-echo "[RES-02] Replay cache failure behavior (in-memory cache reset on restart)"
+echo "[RES-02] Replay cache behavior across ext_authz restart"
 
 wait_for_keycloak
 
@@ -78,10 +79,15 @@ if ! wait_for_api_with_token "$RECOVERY_TOKEN" "$CLIENT_CERT" "$CLIENT_KEY"; the
 fi
 
 third_status="$(api_status "$TOKEN" "$CLIENT_CERT" "$CLIENT_KEY")"
-if [ "$third_status" != "200" ]; then
-  echo "FAIL: after ext_authz restart, replay cache reset should allow previously seen token"
-  echo "      (this indicates external/restart-safe replay cache is not the only expected path)."
+if [ "$third_status" != "$REPLAY_EXPECTED_STATUS_AFTER_RESTART" ]; then
+  echo "FAIL: expected HTTP $REPLAY_EXPECTED_STATUS_AFTER_RESTART after ext_authz restart, got $third_status"
+  echo "      Set REPLAY_EXPECTED_STATUS_AFTER_RESTART=403 for persistent Redis-backed replay cache,"
+  echo "      or REPLAY_EXPECTED_STATUS_AFTER_RESTART=200 for single-instance in-memory reset behavior."
   exit 1
 fi
 
-echo "PASS: replay-cache fallback path observed (single-instance in-memory cache resets after restart)"
+if [ "$REPLAY_EXPECTED_STATUS_AFTER_RESTART" = "403" ]; then
+  echo "PASS: replay marker persisted across ext_authz restart (external Redis-backed cache)"
+else
+  echo "PASS: replay cache reset observed after ext_authz restart (single-instance in-memory behavior)"
+fi

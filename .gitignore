@@ -10,3 +10,7 @@ vault/artifacts/*
 *.log
 .bin/
 :Zone.Identifier
+*.pem
+project_root/
+.tmp/
+

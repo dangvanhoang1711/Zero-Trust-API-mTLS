@@ -5,12 +5,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh"
+source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000/}"
-: "${ATTACKER_CERT:=$PROJECT_ROOT/tests/functional/fixtures/valid-client.crt}"
-: "${ATTACKER_KEY:=$PROJECT_ROOT/tests/functional/fixtures/valid-client.key}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
+: "${ATTACKER_CERT:=$PROJECT_ROOT/envoy/certs/attacker-client-chain.crt}"
+: "${ATTACKER_KEY:=$PROJECT_ROOT/envoy/certs/attacker-client.key}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 
 echo "[SEC-02] Expect: stolen token rejected without matching cert (403 Forbidden)"
 

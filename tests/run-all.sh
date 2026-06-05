@@ -6,9 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BASE_URL="${BASE_URL:-https://localhost:10000/}"
-CLIENT_CERT="${CLIENT_CERT:-$PROJECT_ROOT/infra/certs/client-chain.crt}"
-CLIENT_KEY="${CLIENT_KEY:-$PROJECT_ROOT/infra/certs/client.key}"
-CA_CERT="${CA_CERT:-$PROJECT_ROOT/infra/certs/root-ca.crt}"
+CLIENT_CERT="${CLIENT_CERT:-$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+CLIENT_KEY="${CLIENT_KEY:-$PROJECT_ROOT/envoy/certs/client.key}"
+CA_CERT="${CA_CERT:-$PROJECT_ROOT/envoy/certs/root-ca.crt}"
 
 echo "Waiting for Envoy endpoint to be ready..."
 ready="false"
@@ -45,19 +45,19 @@ run_test() {
 }
 
 run_test "Test A: Valid mTLS certificate + valid bound JWT → 200 OK" \
-  "$PROJECT_ROOT/clients/curl-scripts/01-ok-mtls-valid-header.sh"
+  "$PROJECT_ROOT/scripts/clients/curl-scripts/01-ok-mtls-valid-header.sh"
 
 run_test "Test B: Missing bearer token → 401 Unauthorized" \
-  "$PROJECT_ROOT/clients/curl-scripts/02-fail-no-cert.sh"
+  "$PROJECT_ROOT/scripts/clients/curl-scripts/02-fail-no-cert.sh"
 
 run_test "Test C: Invalid bearer token → 401 Unauthorized" \
-  "$PROJECT_ROOT/clients/curl-scripts/03-fail-invalid-auth-header.sh"
+  "$PROJECT_ROOT/scripts/clients/curl-scripts/03-fail-invalid-auth-header.sh"
 
 run_test "Test D: Valid token with wrong cnf.x5t#S256 binding → 403 Forbidden" \
-  "$PROJECT_ROOT/clients/curl-scripts/04-fail-valid-token-wrong-cert-binding.sh"
+  "$PROJECT_ROOT/scripts/clients/curl-scripts/04-fail-valid-token-wrong-cert-binding.sh"
 
 run_test "Test E: Replay same JWT jti → second request 403 Forbidden" \
-  "$PROJECT_ROOT/clients/curl-scripts/05-fail-replay-jti.sh"
+  "$PROJECT_ROOT/scripts/clients/curl-scripts/05-fail-replay-jti.sh"
 run_test "Test F: Expired client certificate → TLS handshake failure" \
   "$PROJECT_ROOT/tests/functional/phase2-expired-cert.sh"
 run_test "Test G: Revoked client certificate → TLS handshake failure" \

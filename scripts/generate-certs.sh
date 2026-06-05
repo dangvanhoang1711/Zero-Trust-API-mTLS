@@ -19,22 +19,30 @@ VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
 
 mkdir -p "$PKI_DIR" "$CERTS_DIR" "$ENVOY_TRUST_DIR"
 
-log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
-info() { log "INFO: $*"; }
-err()  { log "ERROR: $*"; }
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
 
-VAULT() {
+info() {
+  log "INFO: $*"
+}
+
+err() {
+  log "ERROR: $*"
+}
+
+vault_cmd() {
   vault "$@"
 }
 
-VAULT_STATUS() {
-  vault status > /dev/null 2>&1
+vault_status() {
+  vault status >/dev/null 2>&1
 }
 
 # --- 1. Wait for Vault ---
 info "=== 1. Wait for Vault ==="
 for i in $(seq 1 30); do
-  if VAULT_STATUS; then
+  if vault_status; then
     info "  Vault ready"
     break
   fi
@@ -47,57 +55,57 @@ done
 
 # --- 2. Root CA ---
 info "=== 2. Root CA (pki-root engine, self-signed, 10yr) ==="
-VAULT secrets enable -path=pki-root pki 2>/dev/null || true
-VAULT secrets tune -max-lease-ttl=87600h pki-root
+vault_cmd secrets enable -path=pki-root pki 2>/dev/null || true
+vault_cmd secrets tune -max-lease-ttl=87600h pki-root
 
-if ! VAULT read pki-root/issuer/zero-trust-root > /dev/null 2>&1; then
-  VAULT write -field=certificate pki-root/root/generate/internal \
+if ! vault_cmd read pki-root/issuer/zero-trust-root >/dev/null 2>&1; then
+  vault_cmd write -field=certificate pki-root/root/generate/internal \
     common_name="Zero Trust Root CA" \
     issuer_name="zero-trust-root" \
     ttl=87600h > "$PKI_DIR/root-ca.crt"
   info "  Root CA created"
 else
   info "  Root CA already exists, fetching..."
-  VAULT read -field=certificate pki-root/issuer/zero-trust-root > "$PKI_DIR/root-ca.crt"
+  vault_cmd read -field=certificate pki-root/issuer/zero-trust-root > "$PKI_DIR/root-ca.crt"
 fi
 
-VAULT write pki-root/config/urls \
+vault_cmd write pki-root/config/urls \
   issuing_certificates="http://vault:8200/v1/pki-root/ca" \
   crl_distribution_points="http://vault:8200/v1/pki-root/crl" 2>/dev/null || true
 
 # --- 3. RA Intermediate CA ---
 info "=== 3. RA Intermediate CA (pki-int engine, 5yr) ==="
-VAULT secrets enable -path=pki-int pki 2>/dev/null || true
-VAULT secrets tune -max-lease-ttl=43800h pki-int
+vault_cmd secrets enable -path=pki-int pki 2>/dev/null || true
+vault_cmd secrets tune -max-lease-ttl=43800h pki-int
 
-if ! VAULT read pki-int/issuer/zero-trust-ra > /dev/null 2>&1; then
-  VAULT write -format=json pki-int/intermediate/generate/internal \
+if ! vault_cmd read pki-int/issuer/zero-trust-ra >/dev/null 2>&1; then
+  vault_cmd write -format=json pki-int/intermediate/generate/internal \
     common_name="Zero Trust RA Intermediate CA" \
     issuer_name="zero-trust-ra" \
     ttl=43800h > "$PKI_DIR/intermediate.json"
 
   python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate.json'));print(d['data']['csr'])" > "$PKI_DIR/intermediate.csr"
 
-  VAULT write -format=json pki-root/root/sign-intermediate \
+  vault_cmd write -format=json pki-root/root/sign-intermediate \
     csr=- \
     format=pem_bundle \
     ttl=43800h < "$PKI_DIR/intermediate.csr" > "$PKI_DIR/intermediate-signed.json"
 
   python3 -c "import json,sys;d=json.load(open('$PKI_DIR/intermediate-signed.json'));print(d['data']['certificate'])" > "$PKI_DIR/ra-intermediate.crt"
-  VAULT write pki-int/intermediate/set-signed certificate=- < "$PKI_DIR/ra-intermediate.crt"
+  vault_cmd write pki-int/intermediate/set-signed certificate=- < "$PKI_DIR/ra-intermediate.crt"
   info "  RA Intermediate CA created"
 else
   info "  RA Intermediate CA already exists, fetching..."
-  VAULT read -field=certificate pki-int/issuer/zero-trust-ra > "$PKI_DIR/ra-intermediate.crt" 2>/dev/null || true
+  vault_cmd read -field=certificate pki-int/issuer/zero-trust-ra > "$PKI_DIR/ra-intermediate.crt" 2>/dev/null || true
 fi
 
-VAULT write pki-int/config/urls \
+vault_cmd write pki-int/config/urls \
   issuing_certificates="http://vault:8200/v1/pki-int/ca" \
   crl_distribution_points="http://vault:8200/v1/pki-int/crl" 2>/dev/null || true
 
 # --- 4. Create roles ---
 info "=== 4. Create PKI roles ==="
-VAULT write pki-int/roles/server-cert \
+vault_cmd write pki-int/roles/server-cert \
   allow_any_name=true \
   max_ttl=730h \
   ttl=730h \
@@ -106,7 +114,7 @@ VAULT write pki-int/roles/server-cert \
   server_flag=true \
   client_flag=false 2>/dev/null || info "  Role 'server-cert' already exists"
 
-VAULT write pki-int/roles/client-cert \
+vault_cmd write pki-int/roles/client-cert \
   allow_any_name=true \
   max_ttl=730h \
   ttl=730h \
@@ -117,7 +125,7 @@ VAULT write pki-int/roles/client-cert \
 
 # --- 5. Issue server cert ---
 info "=== 5. Issue server cert ==="
-VAULT write -format=json pki-int/issue/server-cert \
+vault_cmd write -format=json pki-int/issue/server-cert \
   common_name="localhost" \
   alt_names="localhost,envoy,backend,protected-api,ext-authz" \
   ip_sans="127.0.0.1" \
@@ -129,7 +137,7 @@ info "  Server cert issued"
 
 # --- 6. Issue client cert ---
 info "=== 6. Issue client cert ==="
-VAULT write -format=json pki-int/issue/client-cert \
+vault_cmd write -format=json pki-int/issue/client-cert \
   common_name="demo-client" \
   ttl=730h > "$PKI_DIR/client.json"
 

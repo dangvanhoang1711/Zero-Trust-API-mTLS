@@ -3,17 +3,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 source "$SCRIPT_DIR/lib-keycloak.sh"
 
 : "${BASE_URL:=https://localhost:10000}"
 : "${DPoP_TARGET_PATH:=/}"
-: "${CLIENT_CERT:=$PROJECT_ROOT/infra/certs/client-chain.crt}"
-: "${CLIENT_KEY:=$PROJECT_ROOT/infra/certs/client.key}"
-: "${CA_CERT:=$PROJECT_ROOT/infra/certs/root-ca.crt}"
-: "${DPOP_PRIVATE_KEY:=$PROJECT_ROOT/clients/keys/dpop-mock/dpop-mock-private.pem}"
-: "${DPOP_JWK_PATH:=$PROJECT_ROOT/clients/keys/dpop-mock/dpop-mock-jwk.json}"
+: "${CLIENT_CERT:=$PROJECT_ROOT/envoy/certs/client-chain.crt}"
+: "${CLIENT_KEY:=$PROJECT_ROOT/envoy/certs/client.key}"
+: "${CA_CERT:=$PROJECT_ROOT/envoy/certs/root-ca.crt}"
+: "${DPOP_PRIVATE_KEY:=$PROJECT_ROOT/scripts/clients/keys/dpop-mock/dpop-mock-private.pem}"
+: "${DPOP_JWK_PATH:=$PROJECT_ROOT/scripts/clients/keys/dpop-mock/dpop-mock-jwk.json}"
 
 echo "[CASE 6] DPoP mock flow (ext_authz expects cnf.jkt + DPoP proof)"
 

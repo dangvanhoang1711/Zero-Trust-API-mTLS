@@ -26,7 +26,7 @@ resolve_compose_cmd() {
 
 wait_for_envoy() {
   echo "Waiting for Envoy endpoint to become available..."
-  if ! source "$PROJECT_ROOT/clients/curl-scripts/lib-keycloak.sh" >/dev/null 2>&1; then
+  if ! source "$PROJECT_ROOT/scripts/clients/curl-scripts/lib-keycloak.sh" >/dev/null 2>&1; then
     echo "WARN: cannot source keycloak helper script; skipping wait_for_keycloak verification."
   else
     for _ in $(seq 1 60); do
@@ -39,9 +39,9 @@ wait_for_envoy() {
 
   for _ in $(seq 1 60); do
     if curl --silent --show-error --fail \
-      --cert "$PROJECT_ROOT/infra/certs/client-chain.crt" \
-      --key "$PROJECT_ROOT/infra/certs/client.key" \
-      --cacert "$PROJECT_ROOT/infra/certs/root-ca.crt" \
+      --cert "$PROJECT_ROOT/envoy/certs/client-chain.crt" \
+      --key "$PROJECT_ROOT/envoy/certs/client.key" \
+      --cacert "$PROJECT_ROOT/envoy/certs/root-ca.crt" \
       -H "x-test-auth: ok" \
       "https://localhost:10000/" > /dev/null; then
       return
