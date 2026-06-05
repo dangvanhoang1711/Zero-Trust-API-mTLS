@@ -71,6 +71,7 @@ services:
       - "50051:50051"
     volumes:
       - ../../ext_authz/internal/config:/etc/ext-authz/config
+      - ../../envoy/certs:/etc/ext-authz/certs
     environment:
       KEYCLOAK_URL: "http://keycloak:8080"
       KEYCLOAK_REALM: "zero-trust"
@@ -79,7 +80,8 @@ services:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
       LISTEN_ADDR: "0.0.0.0:50051"
-      GODEBUG: "gctrace=0"
+      TLS_CERT_FILE: "/etc/ext-authz/certs/tls.crt"
+      TLS_KEY_FILE: "/etc/ext-authz/certs/tls.key"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -89,6 +91,34 @@ services:
       resources:
         limits:
           memory: 64M
+    networks:
+      - private-net
+
+  pki-init:
+    image: hashicorp/vault:1.15
+    depends_on:
+      vault:
+        condition: service_healthy
+    volumes:
+      - ../../vault/scripts:/project/vault/scripts
+      - ../../envoy/certs:/project/envoy/certs
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-root}"
+    working_dir: /project
+    entrypoint: >
+      /bin/sh -c "
+        VAULT_TOKEN=root apk add --no-cache python3 py3-pip openssl curl > /dev/null 2>&1
+        pip3 install --quiet requests > /dev/null 2>&1
+        echo '=== PKI Init Starting ===' &&
+        chmod +x /project/vault/scripts/gen-pki-vault.sh &&
+        /project/vault/scripts/gen-pki-vault.sh &&
+        echo '=== PKI Init Complete ==='
+      "
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     networks:
       - private-net
 
