@@ -4,7 +4,7 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY internal ./internal
-COPY main.go ./
+COPY cmd/server/main.go ./main.go
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/ext-authz ./main.go
 
