@@ -3,10 +3,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
+COPY cmd ./cmd
 COPY internal ./internal
-COPY main.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/ext-authz ./main.go
+    go build -trimpath -ldflags="-s -w" -o /out/ext-authz ./cmd/server/main.go
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /out/ext-authz /usr/local/bin/ext-authz
