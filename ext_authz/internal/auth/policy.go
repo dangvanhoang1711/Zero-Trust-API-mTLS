@@ -690,15 +690,35 @@ func resolveTokenFact(path string, claims *TokenClaims) ([]string, string) {
 
 	switch key := strings.ToLower(strings.TrimSpace(path)); key {
 	case "sub", "subject":
-		return []string{claims.Subject}, ""
+		values := normalizeList([]string{claims.Subject})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return values, ""
 	case "iss", "issuer":
-		return []string{claims.Issuer}, ""
+		values := normalizeList([]string{claims.Issuer})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return values, ""
 	case "aud", "audience":
-		return claims.Audience, ""
+		values := normalizeList(claims.Audience)
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return values, ""
 	case "jti":
-		return []string{claims.JWTID}, ""
+		values := normalizeList([]string{claims.JWTID})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return values, ""
 	case "scope", "scopes":
-		return claims.Scopes, ""
+		values := normalizeList(claims.Scopes)
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("token claim %q not found", path)
+		}
+		return values, ""
 	default:
 		segments := strings.Split(key, ".")
 		vals := extractClaimValues(claims.RawClaims, segments)
@@ -716,13 +736,29 @@ func resolveCertFact(path string, identity *ClientIdentity) ([]string, string) {
 
 	switch strings.ToLower(strings.TrimSpace(path)) {
 	case "sub", "subject":
-		return []string{identity.Subject}, ""
+		values := normalizeList([]string{identity.Subject})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("cert attribute %q not found", path)
+		}
+		return values, ""
 	case "thumbprint":
-		return []string{identity.Thumbprint}, ""
+		values := normalizeList([]string{identity.Thumbprint})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("cert attribute %q not found", path)
+		}
+		return values, ""
 	case "serial", "serial_number":
-		return []string{identity.SerialNumber}, ""
+		values := normalizeList([]string{identity.SerialNumber})
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("cert attribute %q not found", path)
+		}
+		return values, ""
 	case "san":
-		return identity.SAN, ""
+		values := normalizeList(identity.SAN)
+		if len(values) == 0 {
+			return nil, fmt.Sprintf("cert attribute %q not found", path)
+		}
+		return values, ""
 	default:
 		return nil, fmt.Sprintf("unknown cert attribute %q", path)
 	}

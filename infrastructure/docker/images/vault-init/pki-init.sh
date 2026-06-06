@@ -7,6 +7,17 @@ thumbprint_for_cert() {
     | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
 
+SERVER_CERT_DNS_NAMES="${SERVER_CERT_DNS_NAMES:-localhost,envoy,backend,protected-api,ext-authz,keycloak}"
+SERVER_CERT_IP_SANS="${SERVER_CERT_IP_SANS:-127.0.0.1}"
+
+if [ -n "${SERVER_CERT_EXTRA_DNS:-}" ]; then
+  SERVER_CERT_DNS_NAMES="${SERVER_CERT_DNS_NAMES},${SERVER_CERT_EXTRA_DNS}"
+fi
+
+if [ -n "${SERVER_CERT_EXTRA_IP_SANS:-}" ]; then
+  SERVER_CERT_IP_SANS="${SERVER_CERT_IP_SANS},${SERVER_CERT_EXTRA_IP_SANS}"
+fi
+
 sync_keycloak_realm_export() {
   template_path="/keycloak/realm-export.json.template"
   output_path="/keycloak/realm-export.json"
@@ -127,7 +138,9 @@ vault write pki-int/roles/server-cert allow_any_name=true max_ttl=730h ttl=730h 
 vault write pki-int/roles/client-cert allow_any_name=true max_ttl=730h ttl=730h key_type=ec key_bits=256 client_flag=true
 
 echo "=== PKI Init: server cert ==="
-vault write -format=json pki-int/issue/server-cert common_name=localhost alt_names="localhost,envoy,backend,ext-authz,keycloak" ip_sans="127.0.0.1" ttl=730h > /tmp/server.json
+echo "    DNS SANs: ${SERVER_CERT_DNS_NAMES}"
+echo "    IP SANs:  ${SERVER_CERT_IP_SANS}"
+vault write -format=json pki-int/issue/server-cert common_name=localhost alt_names="${SERVER_CERT_DNS_NAMES}" ip_sans="${SERVER_CERT_IP_SANS}" ttl=730h > /tmp/server.json
 python3 -c 'import json; d=json.load(open("/tmp/server.json")); print(d["data"]["certificate"])' > /certs/server.crt
 python3 -c 'import json; d=json.load(open("/tmp/server.json")); print(d["data"]["private_key"])' > /certs/server.key
 cp /certs/server.crt /certs/server-chain.crt

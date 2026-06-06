@@ -6,13 +6,14 @@ set -euo pipefail
 # Usage: ./generate-certs.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd")
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PKI_DIR="$PROJECT_ROOT/vault/artifacts"
 CERTS_DIR="$PROJECT_ROOT/envoy/certs"
 ENVOY_TRUST_DIR="$CERTS_DIR/trust"
 KEYCLOAK_DIR="$PROJECT_ROOT/keycloak"
 VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
+COMPOSE_FILE="$PROJECT_ROOT/infrastructure/docker/docker-compose.private.yml"
 
 : "${VAULT_ADDR:=https://localhost:8200}"
 : "${VAULT_TOKEN:=root}"
@@ -21,6 +22,10 @@ VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
 : "${KEYCLOAK_CA_CERT:=$CERTS_DIR/root-ca.crt}"
 : "${KEYCLOAK_ADMIN:=admin}"
 : "${KEYCLOAK_ADMIN_PASSWORD:=admin}"
+: "${SERVER_CERT_DNS_NAMES:=localhost,envoy,backend,protected-api,ext-authz,keycloak}"
+: "${SERVER_CERT_IP_SANS:=127.0.0.1}"
+: "${SERVER_CERT_EXTRA_DNS:=}"
+: "${SERVER_CERT_EXTRA_IP_SANS:=}"
 
 mkdir -p "$PKI_DIR" "$CERTS_DIR" "$ENVOY_TRUST_DIR"
 
@@ -40,11 +45,20 @@ err() {
 }
 
 vault_cmd() {
-  vault "$@"
+  if command -v vault >/dev/null 2>&1; then
+    vault "$@"
+    return
+  fi
+
+  docker compose -f "$COMPOSE_FILE" exec -T \
+    -e VAULT_ADDR="https://127.0.0.1:8200" \
+    -e VAULT_CACERT="/certs/vault-ca.crt" \
+    -e VAULT_TOKEN="$VAULT_TOKEN" \
+    vault vault "$@"
 }
 
 vault_status() {
-  vault status >/dev/null 2>&1
+  vault_cmd status >/dev/null 2>&1
 }
 
 thumbprint_for_cert() {
@@ -53,6 +67,14 @@ thumbprint_for_cert() {
   openssl x509 -in "$cert_path" -outform DER \
     | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
+
+if [ -n "$SERVER_CERT_EXTRA_DNS" ]; then
+  SERVER_CERT_DNS_NAMES="$SERVER_CERT_DNS_NAMES,$SERVER_CERT_EXTRA_DNS"
+fi
+
+if [ -n "$SERVER_CERT_EXTRA_IP_SANS" ]; then
+  SERVER_CERT_IP_SANS="$SERVER_CERT_IP_SANS,$SERVER_CERT_EXTRA_IP_SANS"
+fi
 
 # --- 1. Wait for Vault ---
 info "=== 1. Wait for Vault ==="
@@ -140,10 +162,12 @@ vault_cmd write pki-int/roles/client-cert \
 
 # --- 5. Issue server cert ---
 info "=== 5. Issue server cert ==="
+info "  DNS SANs: $SERVER_CERT_DNS_NAMES"
+info "  IP SANs:  $SERVER_CERT_IP_SANS"
 vault_cmd write -format=json pki-int/issue/server-cert \
   common_name="localhost" \
-  alt_names="localhost,envoy,backend,protected-api,ext-authz" \
-  ip_sans="127.0.0.1" \
+  alt_names="$SERVER_CERT_DNS_NAMES" \
+  ip_sans="$SERVER_CERT_IP_SANS" \
   ttl=730h > "$PKI_DIR/server.json"
 
 python3 -c "import json,sys;d=json.load(open('$PKI_DIR/server.json'));print(d['data']['certificate'])" > "$PKI_DIR/server.crt"

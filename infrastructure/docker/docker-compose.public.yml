@@ -1,10 +1,10 @@
 services:
   frontend:
     build: ../../frontend
-    ports:
-      - "3000:80"
     environment:
       VITE_API_BASE_URL: ""
+    volumes:
+      - ../../envoy/certs:/etc/nginx/certs:ro
     depends_on:
       - backend
     networks:
@@ -12,29 +12,31 @@ services:
 
   backend:
     build: ../../backend
-    ports:
-      - "8443:8443"
     volumes:
       - ../../envoy/certs:/certs
     environment:
       KEYCLOAK_URL: "${KEYCLOAK_URL:-https://keycloak:8443}"
       KEYCLOAK_REALM: "zero-trust"
-      KEYCLOAK_CLIENT_ID: "api-gateway"
+      KEYCLOAK_CLIENT_ID: "${KEYCLOAK_CLIENT_ID:-web-app}"
       KEYCLOAK_CLIENT_SECRET: "${KEYCLOAK_CLIENT_SECRET:-}"
+      JWT_ISSUER: "${JWT_ISSUER:-}"
+      JWT_AUDIENCE: "${JWT_AUDIENCE:-api-gateway}"
+      JWKS_URL: "${JWKS_URL:-}"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
       REQUESTS_CA_BUNDLE: "/certs/ca-chain.crt"
-    depends_on:
-      - envoy
     networks:
       - public-net
 
   envoy:
     image: envoyproxy/envoy:v1.31-latest
+    depends_on:
+      - backend
     ports:
       - "443:10000"
-      - "80:10001"
+      - "10001:10001"
+      - "127.0.0.1:9901:9901"
     volumes:
-      - ../../envoy/envoy.yaml:/etc/envoy/envoy.yaml
+      - ../../envoy/envoy.public.yaml:/etc/envoy/envoy.yaml
       - ../../envoy/certs:/etc/envoy/certs
     command: /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --log-level debug
     networks:

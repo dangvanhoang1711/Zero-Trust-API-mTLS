@@ -159,3 +159,87 @@ rules:
 		t.Fatalf("expected later matching rule to allow request, got deny: %q", decision.Reason)
 	}
 }
+
+func TestLoadPolicyFromFile_AllowsPublicRuleWithoutTokenOrCert(t *testing.T) {
+	content := []byte(`
+version: "1"
+default_action: "allow"
+rules:
+  - name: public-access
+    match:
+      path_prefix: "/api/public"
+`)
+
+	tmp, err := os.CreateTemp("", "policy-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(content); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close temp file: %v", err)
+	}
+
+	cfg, err := LoadPolicyFromFile(tmp.Name())
+	if err != nil {
+		t.Fatalf("load policy: %v", err)
+	}
+
+	decision := cfg.Evaluate(PolicyRequest{
+		Method: "GET",
+		Path:   "/api/public",
+		Claims: &TokenClaims{RawClaims: map[string]any{}},
+		Identity: &ClientIdentity{},
+	})
+
+	if !decision.Allowed {
+		t.Fatalf("expected anonymous public request to be allowed, got deny: %q", decision.Reason)
+	}
+}
+
+func TestLoadPolicyFromFile_DeniesTokenExistsConstraintForAnonymousClaims(t *testing.T) {
+	content := []byte(`
+version: "1"
+default_action: "allow"
+rules:
+  - name: profile-access
+    match:
+      path_prefix: "/api/profile"
+    conditions:
+      constraint:
+        fact: token.sub
+        operator: exists
+`)
+
+	tmp, err := os.CreateTemp("", "policy-*.yaml")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(content); err != nil {
+		t.Fatalf("write policy: %v", err)
+	}
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("close temp file: %v", err)
+	}
+
+	cfg, err := LoadPolicyFromFile(tmp.Name())
+	if err != nil {
+		t.Fatalf("load policy: %v", err)
+	}
+
+	decision := cfg.Evaluate(PolicyRequest{
+		Method: "GET",
+		Path:   "/api/profile",
+		Claims: &TokenClaims{RawClaims: map[string]any{}},
+		Identity: &ClientIdentity{},
+	})
+
+	if decision.Allowed {
+		t.Fatal("expected anonymous request without token subject to be denied")
+	}
+}

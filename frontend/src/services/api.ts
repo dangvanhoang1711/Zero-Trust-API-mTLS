@@ -1,5 +1,26 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+async function parseResponseBody(res: Response): Promise<unknown> {
+  if (res.status === 204) {
+    return null;
+  }
+
+  const raw = await res.text();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -25,10 +46,25 @@ async function request<T>(
     throw new Error('Unauthorized');
   }
 
-  const data = await res.json();
+  const data = await parseResponseBody(res);
 
   if (!res.ok) {
-    throw new Error(data.error ?? data.message ?? 'Request failed');
+    if (typeof data === 'string' && data.trim()) {
+      throw new Error(data);
+    }
+
+    if (isRecord(data)) {
+      const error = data.error;
+      const message = data.message;
+      if (typeof error === 'string' && error.trim()) {
+        throw new Error(error);
+      }
+      if (typeof message === 'string' && message.trim()) {
+        throw new Error(message);
+      }
+    }
+
+    throw new Error('Request failed');
   }
 
   return data as T;

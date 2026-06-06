@@ -86,28 +86,41 @@ func main() {
 
 // Check implements the Envoy external authorization gRPC service.
 // This is the main authorization pipeline that enforces zero-trust security through:
-// 1. mTLS certificate validation (Envoy layer)
-// 2. JWT signature verification (JWKS-based)
-// 3. Token-certificate binding (RFC 8705 cnf.x5t#S256)
-// 4. Replay protection (jti tracking)
+// 1. Optional client certificate validation when a browser/API client presents one
+// 2. Optional JWT signature verification when a bearer token is supplied
+// 3. Policy evaluation to distinguish public and protected routes
+// 4. Token-certificate binding (RFC 8705 cnf.x5t#S256) when cnf claims are present
+// 5. Replay protection (jti tracking) for authenticated tokens
 func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	headers := req.GetAttributes().GetRequest().GetHttp().GetHeaders()
 	httpRequest := req.GetAttributes().GetRequest().GetHttp()
+	requestMethod := strings.TrimSpace(httpRequest.GetMethod())
+	requestPath := strings.TrimSpace(httpRequest.GetPath())
+	requestHost := strings.TrimSpace(httpRequest.GetHost())
+	if requestHost == "" {
+		requestHost = getHeader(headers, "host")
+	}
+	rawXFCC := getHeader(headers, "x-forwarded-client-cert")
+	rawAuthorization := getHeader(headers, "authorization")
 
 	if s.configErr != nil {
 		log.Printf("CONFIG ERROR: %v", s.configErr)
 		return deny(http.StatusUnauthorized, "authorization service configuration error"), nil
 	}
 
-	// Step 1: Extract and validate client certificate from mTLS handshake
-	identity, err := auth.ParseClientIdentityFromXFCC(getHeader(headers, "x-forwarded-client-cert"))
-	if err != nil {
-		log.Printf("AUTH DENY (step1 cert): %v", err)
-		return mapAuthErr(err), nil
+	// Step 1: Extract and validate client certificate when one is presented.
+	identity := &auth.ClientIdentity{}
+	if strings.TrimSpace(rawXFCC) != "" {
+		parsedIdentity, err := auth.ParseClientIdentityFromXFCC(rawXFCC)
+		if err != nil {
+			log.Printf("AUTH DENY (step1 cert): %v", err)
+			return mapAuthErr(err), nil
+		}
+		identity = parsedIdentity
 	}
 
 	// Step 1b: Check certificate revocation status (CRL)
-	if s.crlChecker != nil {
+	if s.crlChecker != nil && strings.TrimSpace(identity.SerialNumber) != "" {
 		revoked, crlErr := s.crlChecker.IsRevoked(identity.SerialNumber)
 		if crlErr != nil {
 			return deny(http.StatusInternalServerError, fmt.Sprintf("crl check error: %v", crlErr)), nil
@@ -117,10 +130,14 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		}
 	}
 
-	// Step 2: Verify JWT signature and extract claims
-	tokenClaims, err := s.jwtVerifier.VerifyAuthorizationHeader(getHeader(headers, "authorization"))
-	if err != nil {
-		return mapAuthErr(err), nil
+	// Step 2: Verify JWT signature when a bearer token is supplied.
+	tokenClaims := &auth.TokenClaims{RawClaims: map[string]any{}}
+	if strings.TrimSpace(rawAuthorization) != "" {
+		verifiedClaims, err := s.jwtVerifier.VerifyAuthorizationHeader(rawAuthorization)
+		if err != nil {
+			return mapAuthErr(err), nil
+		}
+		tokenClaims = verifiedClaims
 	}
 
 	// Step 3: Verify token is bound to the presented certificate (proof-of-possession)
@@ -130,20 +147,13 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		}
 	}
 
-	requestMethod := strings.TrimSpace(httpRequest.GetMethod())
-	requestPath := strings.TrimSpace(httpRequest.GetPath())
-	requestHost := strings.TrimSpace(httpRequest.GetHost())
-	if requestHost == "" {
-		requestHost = getHeader(headers, "host")
-	}
-
 	if strings.TrimSpace(tokenClaims.CnfJKT) != "" {
 		requiredNonce := ""
 		if s.dpopNonceEnabled {
 			requiredNonce = s.currentDPoPNonce()
 		}
 		requestURL := buildRequestURL(httpRequest.GetScheme(), httpRequest.GetHost(), requestPath)
-		rawAccessToken := stripBearerPrefix(getHeader(headers, "authorization"))
+		rawAccessToken := stripBearerPrefix(rawAuthorization)
 		if err := auth.ValidateDPoPBinding(
 			tokenClaims.CnfJKT,
 			getHeader(headers, "dpop"),
@@ -200,8 +210,10 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 	}
 
 	// Step 4: Check for replay attacks using JWT ID
-	if err := s.replayCache.MarkIfNew(tokenClaims.JWTID); err != nil {
-		return mapAuthErr(err), nil
+	if strings.TrimSpace(tokenClaims.JWTID) != "" {
+		if err := s.replayCache.MarkIfNew(tokenClaims.JWTID); err != nil {
+			return mapAuthErr(err), nil
+		}
 	}
 
 	dpopNonce := ""

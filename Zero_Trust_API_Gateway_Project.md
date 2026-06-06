@@ -1,51 +1,61 @@
 # Zero Trust API Gateway Project
 
-## Team Management, Repository Structure & AWS Deployment Plan
+## Team Management, Repository Structure, and AWS Deployment Plan
 
----
+## 1. Project Overview
 
-# 1. Project Overview
-
-## Architecture
+### Architecture
 
 ```text
-AWS VPC
-│
-├── Public Subnet (10.0.1.0/24)
-│
-│    └── EC2-Public
-│         ├── Frontend (React + Nginx)
-│         └── Envoy Gateway (PEP)
-│
-└── Private Subnet (10.0.2.0/24)
-     │
-     ├── Keycloak (Identity Provider)
-     ├── ext_authz (Policy Decision Point)
-     ├── Backend API Service
-     ├── Redis (Replay Cache)
-     └── Vault (PKI / Certificate Authority)
+AWS VPC 10.0.0.0/16
+|
++-- Public Subnet 10.0.0.0/20
+    |
+    +-- EC2-Envoy
+    |   private: 10.0.5.131
+    |   public:  13.238.159.245
+    |   workloads:
+    |     - Envoy Gateway
+    |     - Frontend (React + Nginx)
+    |     - Backend API
+    |
+    +-- EC2-Services
+        private: 10.0.2.27
+        public:  3.106.196.141
+        workloads:
+          - ext_authz
+          - Keycloak
+          - Vault
+          - Redis
+          - pki-init
 ```
 
----
+### Runtime Access Model
 
-# 2. Team Members & Responsibilities
+- Public browser and API entrypoint: `https://13.238.159.245/`
+- Frontend pages are served by Envoy on `443`, then routed to the frontend container
+- `/api/*`, `/protected`, and `/health` are routed by Envoy to the backend
+- Envoy reaches Keycloak, ext_authz, Vault, and Redis on EC2-Services over the private IP `10.0.2.27`
+- EC2-Services has a public IP for administration, but its service ports should remain closed to the public internet
 
-## Hoàng Minh Hiếu
+## 2. Team Members and Responsibilities
 
-### Main Responsibilities
+### Hoang Minh Hieu
 
-Identity & PKI Layer
+Main responsibilities:
 
-### Modules
+- Identity and PKI layer
 
-* Keycloak
-* Vault
-* mTLS
-* Certificate Lifecycle
-* JWT Issuance
-* Certificate Issuance
+Modules:
 
-### Deliverables
+- Keycloak
+- Vault
+- mTLS
+- Certificate lifecycle
+- JWT issuance
+- Certificate issuance
+
+Deliverables:
 
 ```text
 /keycloak
@@ -53,1060 +63,315 @@ Identity & PKI Layer
 /docs/pki
 ```
 
-### Tasks
+Tasks:
 
-* Configure Keycloak Realm
-* Configure OAuth2/OIDC
-* Configure Clients
-* Configure Roles
-* Setup Vault PKI Engine
-* Generate Root CA
-* Generate Intermediate CA
-* Generate Client Certificates
-* Generate Envoy Certificates
-* Configure mTLS Trust Chain
+- Configure Keycloak realm
+- Configure OAuth2 and OIDC
+- Configure clients and roles
+- Set up Vault PKI engine
+- Generate root and intermediate CAs
+- Generate client and server certificates
+- Maintain the mTLS trust chain
 
----
+### Nhu Hoang
 
-## Như Hoàng
+Main responsibilities:
 
-### Main Responsibilities
+- Authorization layer and backend
 
-Authorization Layer & Backend
+Modules:
 
-### Modules
+- ext_authz
+- Backend
+- Redis
+- Replay protection
 
-* ext_authz
-* Backend
-* Redis
-* Replay Protection
-
-### Deliverables
+Deliverables:
 
 ```text
 /ext_authz
 /backend
 ```
 
-### Tasks
+Tasks:
 
-* JWT Validation
-* OIDC Discovery
-* JWKS Retrieval
-* cnf.x5t#S256 Validation
-* Replay Protection
-* Redis Integration
-* Backend API Development
-* Business Logic
+- JWT validation
+- OIDC discovery
+- JWKS retrieval
+- `cnf.x5t#S256` validation
+- Replay protection
+- Redis integration
+- Backend API development
+- Business logic
 
----
+### Van Hoang
 
-## Văn Hoàng
+Main responsibilities:
 
-### Main Responsibilities
+- Infrastructure and deployment
 
-Infrastructure & Deployment
+Modules:
 
-### Modules
+- AWS
+- Docker
+- Envoy
+- Networking
+- Frontend deployment
 
-* AWS
-* Docker
-* Envoy
-* Networking
-* Frontend Deployment
-
-### Deliverables
+Deliverables:
 
 ```text
 /infrastructure
 /envoy
-/frontend deployment
+/frontend
 ```
 
-### Tasks
+Tasks:
 
-* Create AWS Infrastructure
-* Create VPC
-* Create Subnets
-* Create Security Groups
-* Configure EC2
-* Configure Docker
-* Configure Docker Compose
-* Deploy Frontend
-* Deploy Envoy
-* Configure Routing
-* Configure DNS
+- Create AWS infrastructure
+- Create VPC, subnet, and security groups
+- Configure EC2 hosts
+- Configure Docker and Docker Compose
+- Deploy Envoy, frontend, and backend
+- Configure routing and DNS
 
----
+## 3. Git Workflow
 
-# 3. Git Workflow
-
-## Main Branches
+### Main Branches
 
 ```text
 main
-
 develop
-
 feature/hieu-keycloak-vault
-
 feature/nhuhoang-authz-backend
-
 feature/vanhoang-infrastructure
 ```
 
----
-
-## Branch Ownership
-
-### Hiếu
-
-```bash
-git checkout -b feature/hieu-keycloak-vault
-```
-
-Owns:
+### Merge Flow
 
 ```text
-keycloak/
-vault/
-docs/pki/
-```
-
----
-
-### Như Hoàng
-
-```bash
-git checkout -b feature/nhuhoang-authz-backend
-```
-
-Owns:
-
-```text
-backend/
-ext_authz/
-```
-
----
-
-### Văn Hoàng
-
-```bash
-git checkout -b feature/vanhoang-infrastructure
-```
-
-Owns:
-
-```text
-frontend/
-envoy/
-infrastructure/
-```
-
----
-
-## Merge Flow
-
-```text
-feature/*
-     ↓
-
-develop
-     ↓
-
-main
+feature/* -> develop -> main
 ```
 
 Rules:
 
-* Never commit directly to main
-* Merge feature → develop
-* Test
-* Merge develop → main
+- Never commit directly to `main`
+- Merge feature branches into `develop`
+- Test before promoting to `main`
 
----
-
-# 4. Repository Structure
+## 4. Repository Structure
 
 ```text
 Zero-Trust-API-mTLS/
-│
-├── frontend/
-│
-├── backend/
-│
-├── ext_authz/
-│
-├── envoy/
-│
-├── keycloak/
-│
-├── vault/
-│
-├── infrastructure/
-│
-├── scripts/
-│
-├── docs/
-│
-└── README.md
+|
++-- frontend/
++-- backend/
++-- ext_authz/
++-- envoy/
++-- keycloak/
++-- vault/
++-- infrastructure/
++-- scripts/
++-- docs/
++-- README.md
 ```
 
----
+## 5. Deployment Plan
 
-# 5. Detailed Repository Layout
+### EC2-Envoy
 
-```text
-frontend/
-│
-├── src/
-├── public/
-├── package.json
-└── Dockerfile
-
-backend/
-│
-├── app/
-├── routes/
-├── services/
-├── requirements.txt
-└── Dockerfile
-
-ext_authz/
-│
-├── app/
-├── auth/
-├── mtls/
-├── replay/
-├── oidc/
-├── requirements.txt
-└── Dockerfile
-
-envoy/
-│
-├── envoy.yaml
-├── certs/
-└── Dockerfile
-
-keycloak/
-│
-├── realm-export.json
-└── README.md
-
-vault/
-│
-├── policies/
-├── scripts/
-├── init.sh
-└── README.md
-
-infrastructure/
-│
-├── docker/
-│
-├── aws/
-│
-└── diagrams/
-
-docs/
-│
-├── architecture.md
-├── deployment.md
-├── threat-model.md
-└── demo-guide.md
-```
-
----
-
-# 6. EC2 Deployment Plan
-
-## EC2-Public
-
-### Containers
+Workloads:
 
 ```text
 frontend
+backend
 envoy
 ```
 
-### Public IP
+Host networking:
 
 ```text
-44.x.x.x
+private IP: 10.0.5.131
+public IP:  13.238.159.245
+published ports:
+  443    -> Envoy HTTPS entrypoint
+  10001  -> Envoy health and baseline TLS
+  9901   -> Envoy admin (localhost only)
 ```
 
-### Exposed Ports
+### EC2-Services
 
-```text
-80
-443
-10000
-```
-
----
-
-## EC2-Private
-
-### Containers
+Workloads:
 
 ```text
 keycloak
-ext_authz
-backend
-redis
+ext-authz
 vault
+redis
+pki-init
 ```
 
-### No Public IP
-
-Only accessible via:
+Host networking:
 
 ```text
-10.0.1.10
+private IP: 10.0.2.27
+public IP:  3.106.196.141
+application ports used from EC2-Envoy:
+  8443   -> Keycloak HTTPS
+  50051  -> ext_authz gRPC
+  8200   -> Vault HTTPS
+  6379   -> Redis
 ```
 
-(EC2-Public)
+Operational rule:
 
----
+- Use the private IP `10.0.2.27` for all application traffic from EC2-Envoy
+- Keep public access on EC2-Services limited to SSH or explicit operator-only maintenance flows
 
-# 7. Docker Compose
+## 6. Docker Compose Summary
 
-## docker-compose.public.yml
+### `docker-compose.public.yml`
+
+Purpose:
+
+- Runs the browser-facing edge stack on EC2-Envoy
+
+Current shape:
 
 ```yaml
 services:
-
   frontend:
-    build:
-      context: ../../frontend
-    container_name: frontend
-
-  envoy:
-    image: envoyproxy/envoy
-    container_name: envoy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "10000:10000"
-```
-
----
-
-## docker-compose.private.yml
-
-```yaml
-services:
-
-  keycloak:
-    image: quay.io/keycloak/keycloak
-
-  redis:
-    image: redis
-
-  vault:
-    image: hashicorp/vault
-
-  ext_authz:
-    build:
-      context: ../../ext_authz
+    build: ../../frontend
 
   backend:
-    build:
-      context: ../../backend
+    build: ../../backend
+
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    ports:
+      - "443:10000"
+      - "10001:10001"
+      - "127.0.0.1:9901:9901"
 ```
 
----
+### `docker-compose.private.yml`
 
-# 8. Authentication Flow
+Purpose:
+
+- Runs the identity and authorization stack on EC2-Services
+
+Current shape:
+
+```yaml
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    ports:
+      - "${KEYCLOAK_HTTP_HOST_PORT:-8081}:8080"
+      - "${KEYCLOAK_HTTPS_HOST_PORT:-18080}:8443"
+
+  vault:
+    image: hashicorp/vault:1.15
+    ports:
+      - "8200:8200"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ext-authz:
+    build: ../../ext_authz
+    ports:
+      - "50051:50051"
+```
+
+## 7. Authentication Flow
+
+### Browser Flow
 
 ```text
-User
- ↓
-Frontend
- ↓
-Envoy
- ↓
-Keycloak
- ↓
-JWT
- ↓
-Frontend
+Browser
+  -> Envoy on EC2-Envoy
+  -> Frontend
+  -> /api/auth/login via Envoy
+  -> Backend
+  -> Keycloak on EC2-Services
+  -> JWT returned to the browser session
 ```
 
----
-
-# 9. Protected API Flow
+### Protected API Flow
 
 ```text
-User
- ↓
-Frontend
- ↓
-Envoy
- ↓
-ext_authz
-
-JWT Verification
-Certificate Verification
-cnf Validation
-Replay Check
-
- ↓
-
-Backend
+Client
+  -> Envoy on EC2-Envoy
+  -> ext_authz on EC2-Services
+     - JWT verification
+     - certificate thumbprint binding
+     - route policy check
+     - replay detection
+  -> Backend
 ```
 
----
-# 10. Security Components Specification
+## 8. Core Security Components
 
-## Vault PKI
+### Vault PKI
 
-### Purpose
+- Issues the root and intermediate CA hierarchy
+- Issues server and client certificates
+- Regenerates Keycloak thumbprint bindings to match current client certificates
 
-Internal Certificate Authority.
+### Keycloak
 
-Vault chịu trách nhiệm quản lý toàn bộ vòng đời certificate trong hệ thống.
+- Acts as the OIDC identity provider
+- Publishes discovery and JWKS endpoints
+- Issues ES256 JWTs
+- Supports certificate-bound client tokens for Postman demos
 
-### Responsibilities
+### Redis Replay Cache
 
-#### Root CA
+- Stores used `jti` values
+- Rejects the same JWT on replay
+- Falls back to in-memory replay protection if Redis is unavailable
 
-```text
-Generate Root CA
+### Envoy Gateway
+
+- Terminates public HTTPS on `443`
+- Serves browser routes through the frontend container
+- Sends API traffic through `ext_authz` before routing to backend
+- Forwards client-certificate details in XFCC when a certificate is presented
+
+## 9. Deployment Commands
+
+Preferred end-to-end deployment from your workstation:
+
+```bash
+bash scripts/deploy-ec2-split.sh
 ```
 
-#### Intermediate CA
+Direct SSH paths:
 
-```text
-Generate Intermediate CA
+```bash
+ssh -i ./my_private.pem ubuntu@13.238.159.245
+ssh -i ./ec2_key.pem ubuntu@3.106.196.141
 ```
 
-#### Certificate Issuance
+Or hop from EC2-Envoy to EC2-Services over the private IP:
 
-Issue:
-
-```text
-Client Certificates
-
-Envoy Certificates
-
-Backend Certificates
-
-ext_authz Certificates
-
-Test Certificates
+```bash
+ssh -i ./my_private.pem ubuntu@13.238.159.245
+ssh -i ~/ec2_key.pem ubuntu@10.0.2.27
 ```
 
-#### Certificate Revocation
+## 10. Demo Endpoints
 
-Maintain:
+- Frontend: `https://13.238.159.245/login`
+- Public API: `https://13.238.159.245/api/public`
+- Protected API: `https://13.238.159.245/api/profile`
+- Health: `https://13.238.159.245:10001/health`
 
-```text
-CRL
-(Certificate Revocation List)
-```
+For certificate-binding demos, use:
 
-#### Trust Distribution
-
-Provide certificates to:
-
-```text
-Client Device
-
-Envoy Gateway
-
-Backend Service
-
-ext_authz Service
-```
-
-### APIs
-
-```text
-Issue Certificate
-
-Revoke Certificate
-
-Fetch CRL
-
-Renew Certificate
-```
-
----
-
-## Keycloak
-
-### Purpose
-
-Identity Provider (IdP)
-
-Responsible for authentication and token issuance.
-
-### Responsibilities
-
-#### Authentication
-
-```text
-User Authentication
-
-Client Authentication
-```
-
-#### Authorization
-
-Manage:
-
-```text
-Realm Roles
-
-Users
-
-Groups
-
-Clients
-```
-
-### JWT Issuance
-
-Issue:
-
-```text
-ES256 Signed JWT
-```
-
-### JWKS
-
-Expose:
-
-```text
-/.well-known/openid-configuration
-
-/protocol/openid-connect/certs
-```
-
-for JWT verification.
-
-### Certificate Binding
-
-Protocol Mapper injects:
-
-```json
-{
-  "cnf": {
-    "x5t#S256": "certificate-thumbprint"
-  }
-}
-```
-
-### Demo Users
-
-```text
-admin
-demo-user
-```
-
-### Demo Roles
-
-```text
-admin
-
-user
-```
-
-### Admin API
-
-Used for:
-
-```text
-Create User
-
-Delete User
-
-Assign Role
-
-Update Configuration
-```
-
----
-
-## Redis Replay Cache
-
-### Purpose
-
-Replay Attack Prevention
-
-### Storage
-
-Store:
-
-```text
-JWT jti
-```
-
-after first successful usage.
-
-### Logic
-
-Use:
-
-```text
-SETNX
-```
-
-Example:
-
-```text
-SETNX(jwt_jti)
-```
-
-If exists:
-
-```text
-Replay Attack Detected
-```
-
-Return:
-
-```text
-HTTP 403
-```
-
-### Expiration
-
-Use:
-
-```text
-TTL
-```
-
-equal to token expiration.
-
-### Fallback
-
-If Redis unavailable:
-
-```text
-In-Memory Replay Cache
-```
-
-is used.
-
----
-
-## Envoy Gateway
-
-### Purpose
-
-Policy Enforcement Point (PEP)
-
-Single Entry Point of the system.
-
-### Responsibilities
-
-#### TLS Termination
-
-```text
-TLS
-
-mTLS
-```
-
-#### Client Certificate Validation
-
-Verify:
-
-```text
-Certificate Chain
-
-Trusted CA
-```
-
-#### Routing
-
-Forward requests to:
-
-```text
-Backend
-
-Keycloak
-
-ext_authz
-```
-
-#### External Authorization
-
-Call:
-
-```text
-gRPC ext_authz Filter
-```
-
-before forwarding.
-
-### Listeners
-
-#### Listener 1
-
-```text
-HTTPS + mTLS
-
-Protected APIs
-```
-
-#### Listener 2
-
-```text
-HTTPS
-
-Public Access
-```
-
-#### Listener 3
-
-```text
-Reverse Proxy
-
-Keycloak Login
-```
-
----
-
-## ext_authz
-
-### Purpose
-
-Policy Decision Point (PDP)
-
-Core Zero-Trust Authorization Engine.
-
-Every protected request must pass ext_authz.
-
-### Authorization Pipeline
-
-Request processing pipeline:
-
-#### Step 1
-
-```text
-Parse Client Certificate
-```
-
-Extract:
-
-```text
-XFCC
-```
-
-from Envoy.
-
----
-
-#### Step 2
-
-```text
-Certificate Revocation Check
-```
-
-Check:
-
-```text
-CRL
-```
-
-from Vault.
-
----
-
-#### Step 3
-
-```text
-JWT Verification
-```
-
-Validate:
-
-```text
-Signature
-
-iss
-
-aud
-
-exp
-
-nbf
-```
-
-using Keycloak JWKS.
-
----
-
-#### Step 4
-
-```text
-Certificate Binding Validation
-```
-
-Compute:
-
-```text
-SHA256 Thumbprint
-```
-
-Compare against:
-
-```text
-cnf.x5t#S256
-```
-
-inside JWT.
-
-Mismatch:
-
-```text
-HTTP 403
-```
-
----
-
-#### Step 5
-
-```text
-DPoP Verification
-```
-
-Validate:
-
-```text
-DPoP Proof
-
-ath
-
-htu
-
-htm
-
-iat
-
-jti
-```
-
-Reject if invalid.
-
----
-
-#### Step 6
-```text
-ABAC Policy Evaluation
-
-Attributes:
-
-Subject Attributes
-- role
-- department
-- clearance
-- user_id
-
-Device Attributes
-- certificate_cn
-- certificate_ou
-- device_id
-
-Resource Attributes
-- api_path
-- resource_type
-
-Action Attributes
-- GET
-- POST
-- PUT
-- DELETE
-
-Environment Attributes
-- source_ip
-- request_time
-- network_zone
-
-```
-
----
-
-#### Step 7
-
-```text
-Scope Validation
-```
-
-Verify:
-
-```text
-read
-
-write
-
-admin
-```
-
-against API requirements.
-
----
-
-#### Step 8
-
-```text
-Rate Limiting
-```
-
-Apply:
-
-```text
-Per User
-
-Per Client
-
-Per IP
-```
-
-limits.
-
----
-
-#### Step 9
-
-```text
-Replay Protection
-```
-
-Check:
-
-```text
-jti
-```
-
-against Redis.
-
-If already used:
-
-```text
-HTTP 403
-```
-
----
-
-### Final Decision
-
-All checks pass:
-
-```text
-ALLOW
-```
-
-Return:
-
-```text
-HTTP 200
-```
-
-to Envoy.
-
-Any check fails:
-
-```text
-DENY
-```
-
-Return:
-
-```text
-401
-or
-403
-```
-
----
-
-# 13. End-to-End Request Flow
-
-## Authentication Flow
-
-```text
-User
- ↓
-Frontend
- ↓
-Envoy
- ↓
-Keycloak
- ↓
-JWT + cnf.x5t#S256
- ↓
-Frontend
-```
-
----
-
-## Protected API Flow
-
-```text
-User
- ↓
-Frontend
- ↓
-Envoy
- ↓
-ext_authz
-
-Certificate Check
-CRL Check
-JWT Verify
-Binding Verify
-DPoP Verify
-ABAC
-Scope Check
-Rate Limit
-Replay Check
-
- ↓
-
-Backend
-```
-
----
-
-# 14. Security Goals
-
-System protects against:
-
-```text
-Token Theft
-
-Certificate Theft
-
-Replay Attack
-
-Token Replay
-
-Certificate Replay
-
-Unauthorized Access
-
-Privilege Escalation
-
-Man-in-the-Middle
-
-Invalid Client Device
-```
-
-### Zero Trust Principle
-
-Never Trust
-
-Always Verify
-
-Continuous Verification
-
-Strong Identity
-
-Least Privilege Access
-
+- `demo-client` token with `client-chain.crt`
+- `demo-client-mismatch` token with the normal client certificate to trigger binding failure
+- the same JWT twice to trigger replay detection

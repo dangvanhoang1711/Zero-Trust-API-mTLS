@@ -1,70 +1,54 @@
 # Subnet Configuration
 
-## Public Subnet — EC2-1 (10.0.1.0/24)
+## Public Subnet - `10.0.0.0/20`
 
-| Setting                  | Value                         |
-|--------------------------|-------------------------------|
-| Auto-assign public IP    | Enabled                       |
-| Route 0.0.0.0/0         | Internet Gateway (igw-*)      |
-| Associated instances     | EC2-1                         |
+| Setting | Value |
+|---------|-------|
+| Auto-assign public IP | Enabled |
+| Route `0.0.0.0/0` | Internet Gateway |
+| Associated instances | EC2-Envoy, EC2-Services |
 
-EC2-1 hosts the public-facing components:
+Both instances are in the same subnet:
 
-- **Envoy Proxy** — TLS termination, mTLS enforcement, routing (ports 443/80/10001)
-- **Backend API** — FastAPI application handling business logic (port 8080)
-- **Frontend** — Vite/React SPA served on port 3000
+| Instance | Private IP | Public IP | Workload |
+|----------|------------|-----------|----------|
+| EC2-Envoy | `10.0.5.131` | `13.238.159.245` | Envoy, backend, frontend |
+| EC2-Services | `10.0.2.27` | `3.106.196.141` | ext_authz, Keycloak, Vault, Redis |
 
-Since this subnet requires direct internet access for HTTPS clients and outbound package downloads, instances receive a public IP and route default traffic through the IGW.
+This is a management-friendly layout, but it pushes more responsibility onto security groups because the subnet itself no longer separates edge and service workloads.
 
-## Private Subnet — EC2-2 (10.0.2.0/24)
+## Operational Guidance
 
-| Setting                  | Value                         |
-|--------------------------|-------------------------------|
-| Auto-assign public IP    | Disabled                      |
-| Route 0.0.0.0/0         | NAT Gateway (nat-*)           |
-| Associated instances     | EC2-2                         |
+- Use the public IP on EC2-Envoy for browser traffic and normal operator SSH access
+- Use the public IP on EC2-Services only for tightly controlled administration if you need it
+- Keep all application dependencies on private IPs, especially the EC2-Envoy to EC2-Services calls
 
-EC2-2 hosts the sensitive infrastructure components:
+## Recommended NACL Approach
 
-- **Keycloak** — Identity provider, OIDC token issuance (port 8080)
-- **Vault** — PKI engine, secrets management (port 8200)
-- **Redis** — Replay cache, rate-limiting state (port 6379)
-- **ext-authz** — Envoy external authorization gRPC service (port 50051)
+Because both hosts share one subnet, keep the NACL relatively simple and let security groups enforce host-level policy. A restrictive NACL that tries to model per-host policy in a shared subnet is easy to get wrong.
 
-No public IP is assigned. Outbound internet access is routed through the NAT Gateway in the public subnet.
+### Example Inbound Rules
 
-## Network ACLs
+| Rule # | Protocol | Port Range | Source | Action |
+|--------|----------|------------|--------|--------|
+| 100 | All | All | `10.0.0.0/20` | Allow |
+| 110 | TCP | `443` | `0.0.0.0/0` | Allow |
+| 120 | TCP | `22` | `<admin-ip>/32` | Allow |
+| 130 | TCP | `1024-65535` | `0.0.0.0/0` | Allow |
+| * | All | All | `0.0.0.0/0` | Deny |
 
-Network ACLs (NACLs) provide a stateless layer of defense at the subnet boundary. The following rules are recommended:
+### Example Outbound Rules
 
-### Public Subnet NACL
+| Rule # | Protocol | Port Range | Destination | Action |
+|--------|----------|------------|-------------|--------|
+| 100 | All | All | `10.0.0.0/20` | Allow |
+| 110 | TCP | `80` | `0.0.0.0/0` | Allow |
+| 120 | TCP | `443` | `0.0.0.0/0` | Allow |
+| 130 | TCP | `1024-65535` | `0.0.0.0/0` | Allow |
+| * | All | All | `0.0.0.0/0` | Deny |
 
-| Rule # | Type      | Protocol | Port Range | Source/Dest     | Allow/Deny |
-|--------|-----------|----------|------------|-----------------|------------|
-| 100    | Inbound   | TCP      | 443        | 0.0.0.0/0       | Allow      |
-| 110    | Inbound   | TCP      | 80         | 0.0.0.0/0       | Allow      |
-| 120    | Inbound   | TCP      | 22         | <your-ip>/32    | Allow      |
-| 130    | Inbound   | TCP      | 1024-65535 | 0.0.0.0/0       | Allow      |
-| *      | Inbound   | All      | All        | 0.0.0.0/0       | Deny       |
-| 100    | Outbound  | TCP      | 1024-65535 | 0.0.0.0/0       | Allow      |
-| 110    | Outbound  | TCP      | 443        | 0.0.0.0/0       | Allow      |
-| 120    | Outbound  | TCP      | 80         | 0.0.0.0/0       | Allow      |
-| *      | Outbound  | All      | All        | 0.0.0.0/0       | Deny       |
+Notes:
 
-### Private Subnet NACL
-
-| Rule # | Type      | Protocol | Port Range | Source/Dest     | Allow/Deny |
-|--------|-----------|----------|------------|-----------------|------------|
-| 100    | Inbound   | TCP      | 8080       | 10.0.1.0/24     | Allow      |
-| 110    | Inbound   | TCP      | 50051      | 10.0.1.0/24     | Allow      |
-| 120    | Inbound   | TCP      | 8200       | 10.0.1.0/24     | Allow      |
-| 130    | Inbound   | TCP      | 6379       | 10.0.1.0/24     | Allow      |
-| 140    | Inbound   | TCP      | 22         | <your-ip>/32    | Allow      |
-| 150    | Inbound   | TCP      | 1024-65535 | 10.0.1.0/24     | Allow      |
-| *      | Inbound   | All      | All        | 0.0.0.0/0       | Deny       |
-| 100    | Outbound  | TCP      | 1024-65535 | 0.0.0.0/0       | Allow      |
-| 110    | Outbound  | TCP      | 443        | 0.0.0.0/0       | Allow      |
-| 120    | Outbound  | TCP      | 80         | 0.0.0.0/0       | Allow      |
-| *      | Outbound  | All      | All        | 0.0.0.0/0       | Deny       |
-
-> **Note:** NACLs are stateless, so ephemeral ports (1024-65535) must be explicitly allowed for return traffic. Security Groups are the preferred mechanism for stateful traffic filtering between EC2 instances.
+- NACLs are stateless, so return traffic needs the ephemeral-port rules
+- The NACL above does not differentiate EC2-Envoy from EC2-Services
+- Do not rely on the subnet NACL to keep Keycloak, Vault, Redis, or ext_authz private; use security groups for that
