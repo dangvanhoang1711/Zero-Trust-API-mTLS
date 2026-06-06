@@ -67,6 +67,7 @@ class KeycloakService:
             "username": username,
             "password": password,
             "grant_type": "password",
+            "scope": "openid email profile api_protected:read",
         }
         payload.update(self._client_auth_payload())
         resp = self._session.post(self._token_url(), data=payload, timeout=10)

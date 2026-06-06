@@ -1,48 +1,25 @@
 include:
-  - docker-compose.private.yml
+  - docker-compose.service.yml
 
 services:
   frontend:
     build: ../../frontend
     ports:
-      - "3001:80"
+      - "3001:443"
+    environment:
+      VITE_API_BASE_URL: ""
+    volumes:
+      - ../../envoy/certs:/etc/nginx/certs:ro
     depends_on:
       backend:
         condition: service_started
     networks:
-      - private-net
-
-  backend:
-    build: ../../backend
-    ports:
-      - "8000:8443"
-    volumes:
-      - ../../envoy/certs:/certs
-    environment:
-      KEYCLOAK_URL: "https://keycloak:8443"
-      KEYCLOAK_REALM: "zero-trust"
-      KEYCLOAK_CLIENT_ID: "web-app"
-      KEYCLOAK_CLIENT_SECRET: ""
-      JWT_ISSUER: "https://keycloak:18080/realms/zero-trust"
-      JWT_AUDIENCE: "api-gateway"
-      KEYCLOAK_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
-      KEYCLOAK_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
-      SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
-      REQUESTS_CA_BUNDLE: "/certs/ca-chain.crt"
-      GUNICORN_CERTFILE: "/certs/tls.crt"
-      GUNICORN_KEYFILE: "/certs/tls.key"
-    depends_on:
-      keycloak:
-        condition: service_healthy
-      pki-init:
-        condition: service_completed_successfully
-    networks:
-      - private-net
+      - service-net
 
   envoy:
     image: envoyproxy/envoy:v1.31-latest
     ports:
-      - "10000:10000"
+      - "443:10000"
       - "10001:10001"
       - "9901:9901"
     volumes:
@@ -57,4 +34,4 @@ services:
       pki-init:
         condition: service_completed_successfully
     networks:
-      - private-net
+      - service-net

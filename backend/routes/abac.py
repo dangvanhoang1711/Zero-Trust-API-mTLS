@@ -46,6 +46,63 @@ def require_jwt(f):
     return decorated
 
 
+def abac_enforce(rule_name):
+    """Decorator that enforces a named ABAC rule against the current token.
+
+    Evaluates the rule's conditions using the same engine as /api/abac/evaluate.
+    Returns 403 with HTML error message if the rule exists but conditions are not met.
+    Falls through (allows) if the rule is not found, preserving default_action semantics.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            policy = _load_policy()
+            claims = getattr(g, "token_payload", )
+            roles = claims.get("realm_access", {}).get("roles", [])
+            default_action = policy.get("default_action", "allow")
+
+            # find the named rule
+            rule = next((r for r in policy.get("rules", []) if r.get("name") == rule_name), None)
+
+            if rule is None:
+                # rule not found — honour default action
+                if default_action != "allow":
+                    return f"""
+                    <!DOCTYPE html>
+                    <html><head><meta charset="utf-8"><title>Access Denied</title></head>
+                    <body style="font-family: sans-serif; padding: 2rem; background: #fee; color: #900;">
+                        <h1>❌ Access Denied - Rule Not Found</h1>
+                        <p>ABAC rule <strong>{rule_name}</strong> not found and default action is <code>{default_action}</code>.</p>
+                    </body></html>
+                    """, 403
+                return f(*args, **kwargs)
+
+            satisfied, condition_details = _match_rule(rule, claims, roles)
+
+            if not satisfied:
+                failing = [d for d in condition_details if not d.get("result", True)]
+                failing_html = "<ul>" + "".join(
+                    f"<li><code>{d['fact']}</code> {d['operator']} <code>{d.get('expected')}</code> "
+                    f"(actual: <code>{d.get('actual')}</code>) → <strong>FAIL</strong></li>"
+                    for d in failing
+                ) + "</ul>"
+                
+                return f"""
+                <!DOCTYPE html>
+                <html><head><meta charset="utf-8"><title>Access Denied</title></head>
+                <body style="font-family: sans-serif; padding: 2rem; background: #fee; color: #900;">
+                    <h1>❌ Access Denied - ABAC Policy Mismatch</h1>
+                    <p>Rule: <strong>{rule_name}</strong></p>
+                    <p>Your request does not satisfy the following conditions:</p>
+                    {failing_html}
+                </body></html>
+                """, 403
+
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+
 @abac_bp.route("/policies", methods=["GET"])
 @require_jwt
 def policies():
@@ -60,13 +117,14 @@ def policies():
         conditions = rule.get("conditions", {})
         action = rule.get("action", "allow")
 
-        matched = _match_rule(rule, claims, roles)
+        matched, condition_details = _match_rule(rule, claims, roles)
         enriched.append({
             "name": rule.get("name", ""),
             "match": match,
             "conditions": conditions,
             "action": action,
             "userMatch": matched,
+            "conditionDetails": condition_details,
         })
 
     relevant_roles = [r for r in roles if r in ("admin", "user")] + ["guest"] if not any(r in roles for r in ("admin", "user")) else [r for r in roles if r in ("admin", "user")]
@@ -193,114 +251,178 @@ def _method_matches(rule, method):
 def _match_rule(rule, claims, roles):
     conditions = rule.get("conditions", {})
     if not conditions:
-        return True
+        return True, []
+
+    details = []
+
+    # required_scopes — always checked regardless of constraint
+    required_scopes = conditions.get("required_scopes", [])
+    if required_scopes:
+        token_scopes = claims.get("scope", "").split()
+        scope_ok = all(s in token_scopes for s in required_scopes)
+        details.append({
+            "fact": "token.scope",
+            "operator": "contains",
+            "expected": required_scopes,
+            "actual": token_scopes,
+            "result": scope_ok,
+        })
+        if not scope_ok:
+            return False, details
 
     constraint = conditions.get("constraint")
     if constraint:
-        return _evaluate_constraint(constraint, claims, roles)
+        result, constraint_details = _evaluate_constraint_detailed(constraint, claims, roles)
+        details.extend(constraint_details)
+        return result, details
 
-    # legacy condition checks
+    # legacy condition checks (no constraint block)
     token_subjects = conditions.get("token_subjects", [])
-    if token_subjects and claims.get("sub") not in token_subjects:
-        return False
+    if token_subjects:
+        sub_ok = claims.get("sub") in token_subjects
+        details.append({"fact": "token.sub", "operator": "in", "expected": token_subjects, "actual": claims.get("sub"), "result": sub_ok})
+        if not sub_ok:
+            return False, details
 
     cert_subjects = conditions.get("cert_subjects", [])
     if cert_subjects:
-        return False
+        details.append({"fact": "cert.subject", "operator": "exists", "expected": "any", "actual": None, "result": False})
+        return False, details
 
     required_claims = conditions.get("claims", {})
     for key, allowed in required_claims.items():
         actual = _resolve_claim(claims, key)
-        if not actual or not any(a in allowed for a in actual):
-            return False
+        ok = bool(actual) and any(a in allowed for a in actual)
+        details.append({"fact": f"token.{key}", "operator": "in", "expected": allowed, "actual": actual, "result": ok})
+        if not ok:
+            return False, details
 
-    required_scopes = conditions.get("required_scopes", [])
-    if required_scopes:
-        token_scopes = claims.get("scope", "").split()
-        if not any(s in token_scopes for s in required_scopes):
-            return False
-
-    return True
+    return True, details
 
 
 def _check_conditions(rule, claims, roles):
-    return _match_rule(rule, claims, roles)
+    result, _ = _match_rule(rule, claims, roles)
+    return result
 
 
-def _evaluate_constraint(constraint, claims, roles):
+def _negate_operator(op):
+    return {
+        "in": "not in",
+        "contains": "not contains",
+        "exists": "not exists",
+        "not_exists": "exists",
+        "matches": "not matches",
+        "between": "not between",
+        "eq": "neq",
+        "neq": "eq",
+    }.get(op, f"not {op}")
+
+
+def _evaluate_constraint_detailed(constraint, claims, roles, path=""):
     if not isinstance(constraint, dict):
-        return True
+        return True, []
 
-    # Handle all (AND)
     if "all" in constraint:
         items = constraint["all"]
         if not isinstance(items, list) or len(items) == 0:
-            return True
-        for item in items:
-            if not _evaluate_constraint(item, claims, roles):
-                return False
-        return True
+            return True, []
+        all_details = []
+        for i, item in enumerate(items):
+            ok, sub_details = _evaluate_constraint_detailed(item, claims, roles, f"{path}.all[{i}]")
+            all_details.extend(sub_details)
+            if not ok:
+                return False, all_details
+        return True, all_details
 
-    # Handle any (OR)
     if "any" in constraint:
         items = constraint["any"]
         if not isinstance(items, list) or len(items) == 0:
-            return True
-        for item in items:
-            if _evaluate_constraint(item, claims, roles):
-                return True
-        return False
+            return True, []
+        any_details = []
+        for i, item in enumerate(items):
+            ok, sub_details = _evaluate_constraint_detailed(item, claims, roles, f"{path}.any[{i}]")
+            any_details.extend(sub_details)
+            if ok:
+                return True, any_details
+        return False, any_details
 
-    # Handle not
     if "not" in constraint:
         inner = constraint["not"]
-        return not _evaluate_constraint(inner, claims, roles)
+        if "fact" in inner:
+            fact = inner.get("fact", "")
+            operator = inner.get("operator", "")
+            value = inner.get("value")
+            actual = _resolve_fact(fact, claims, roles)
+            negated = _negate_operator(operator)
+            if actual is None:
+                result = operator == "not_exists"
+                return not result, [{"fact": fact, "operator": negated, "expected": value, "actual": None, "result": not result}]
+            ok, _ = _evaluate_constraint_detailed(inner, claims, roles, f"{path}.not")
+            return not ok, [{"fact": fact, "operator": negated, "expected": value, "actual": actual, "result": not ok}]
+        ok, sub_details = _evaluate_constraint_detailed(inner, claims, roles, f"{path}.not")
+        return not ok, sub_details
 
-    # Leaf condition
     fact = constraint.get("fact", "")
     operator = constraint.get("operator", "")
     value = constraint.get("value")
 
     actual = _resolve_fact(fact, claims, roles)
     if actual is None:
-        return operator == "not_exists"
+        result = operator == "not_exists"
+        return result, [{"fact": fact, "operator": operator, "expected": value, "actual": None, "result": result}]
 
     if operator == "exists":
-        return True
+        return True, [{"fact": fact, "operator": "exists", "expected": None, "actual": actual, "result": True}]
     if operator == "not_exists":
-        return False
+        return False, [{"fact": fact, "operator": "not_exists", "expected": None, "actual": actual, "result": False}]
     if operator == "contains":
-        return any(str(value).lower() in str(a).lower() for a in actual)
+        result = any(str(value).lower() in str(a).lower() for a in actual)
+        return result, [{"fact": fact, "operator": "contains", "expected": value, "actual": actual, "result": result}]
     if operator == "in":
         allowed = value if isinstance(value, list) else [value]
-        return any(str(a) in [str(v) for v in allowed] for a in actual)
+        result = any(str(a) in [str(v) for v in allowed] for a in actual)
+        return result, [{"fact": fact, "operator": "in", "expected": allowed, "actual": actual, "result": result}]
+    if operator == "between":
+        if isinstance(value, list) and len(value) == 2:
+            result = any(float(value[0]) <= float(a) <= float(value[1]) for a in actual)
+        else:
+            result = False
+        return result, [{"fact": fact, "operator": "between", "expected": value, "actual": actual, "result": result}]
     if operator == "eq":
-        return any(str(a) == str(value) for a in actual)
+        result = any(str(a) == str(value) for a in actual)
+        return result, [{"fact": fact, "operator": "eq", "expected": value, "actual": actual, "result": result}]
     if operator == "neq":
-        return not any(str(a) == str(value) for a in actual)
+        result = not any(str(a) == str(value) for a in actual)
+        return result, [{"fact": fact, "operator": "neq", "expected": value, "actual": actual, "result": result}]
     if operator == "matches":
         import re
         try:
             pattern = re.compile(str(value))
-            return any(pattern.search(str(a)) for a in actual)
+            result = any(pattern.search(str(a)) for a in actual)
         except re.error:
-            return False
-    return True
+            result = False
+        return result, [{"fact": fact, "operator": "matches", "expected": value, "actual": actual, "result": result}]
+    return True, []
 
 
 def _resolve_fact(fact, claims, roles):
     if not fact or "." not in fact:
         return None
 
+    import datetime
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
     source, path = fact.split(".", 1)
     if source == "token":
         return _resolve_claim(claims, path)
     if source == "request" and path == "time.hour":
-        import datetime
-        return [str(datetime.datetime.now().hour)]
+        now = datetime.datetime.now(_TZ)
+        return [str(now.hour)]
     if source == "request" and path in ("time.day_of_week", "time.dayofweek", "time.dow"):
-        import datetime
-        return [str(datetime.datetime.now().weekday())]
+        now = datetime.datetime.now(_TZ)
+        dw = now.weekday()          # Mon=0 … Sun=6
+        return [str((dw + 1) % 7)] # Sun=0, Mon=1 … Sat=6  (Go convention)
     if source == "request" and path == "method":
         return [request.method]
     if source == "request" and path == "path":

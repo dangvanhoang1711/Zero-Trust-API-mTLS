@@ -17,21 +17,17 @@ rules:
         fact: token.sub
         operator: exists
 
-  - name: jwt-info-access
-    match:
-      path_prefix: "/api/jwt-info"
-    conditions:
-      constraint:
-        fact: token.sub
-        operator: exists
-
   - name: protected-api
     match:
-      path_prefix: "/protected"
+      path_prefix: "/api/protected"
     conditions:
       constraint:
-        fact: token.sub
-        operator: exists
+        all:
+          - fact: token.sub
+            operator: exists
+          - fact: token.realm_access.roles
+            operator: contains
+            value: protected-reader
 
   # ─── User data — weekday only (weekend needs break-glass) ────────────
   - name: user-data-weekday
@@ -48,19 +44,6 @@ rules:
               operator: in
               value: [0, 6]
 
-  # ─── User data weekend break-glass — cert subject match ──────────────
-  - name: user-data-break-glass
-    match:
-      path_prefix: "/api/user-data"
-    conditions:
-      constraint:
-        all:
-          - fact: cert.subject
-            operator: matches
-            value: ".*demo-client.*"
-          - fact: request.time.day_of_week
-            operator: in
-            value: [0, 6]
 
   # ─── Admin data — admin role + business hours (7–22) ─────────────────
   - name: admin-business-hours
@@ -80,13 +63,3 @@ rules:
           - fact: token.email
             operator: exists
 
-  # ─── Deny rules (no conditions, always block) ────────────────────────
-  - name: deny-admin
-    match:
-      path_prefix: "/admin"
-    action: "deny"
-
-  - name: deny-secrets
-    match:
-      path_prefix: "/secrets"
-    action: "deny"
