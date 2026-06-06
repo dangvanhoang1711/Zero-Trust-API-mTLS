@@ -145,7 +145,7 @@ static_resources:
                   address:
                     socket_address:
                       address: 10.0.2.27
-                      port_value: 8443
+                      port_value: 5000
 
     - name: protected_api_service
       type: STRICT_DNS
@@ -166,7 +166,7 @@ static_resources:
                   address:
                     socket_address:
                       address: 10.0.2.27
-                      port_value: 8443
+                      port_value: 5000
 
     - name: keycloak_service
       type: STRICT_DNS

@@ -99,7 +99,7 @@ services:
   backend:
     build: ../../backend
     ports:
-      - "8443:8443"
+      - "5000:8443"
     volumes:
       - ../../envoy/certs:/certs
     environment:
