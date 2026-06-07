@@ -12,7 +12,7 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTPS_CERTIFICATE_FILE: "/certs/tls.crt"
       KC_HTTPS_CERTIFICATE_KEY_FILE: "/certs/tls.key"
-      JAVA_OPTS: "-Xms64m -Xmx256m -XX:MetaspaceSize=64m -XX:MaxMetaspaceSize=128m"
+      JAVA_OPTS: "-Xms128m -Xmx512m -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=256m"
     volumes:
       - ../../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
       - ../../envoy/certs:/certs
@@ -29,7 +29,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 1024M
     networks:
       - service-net
 
