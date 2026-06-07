@@ -384,10 +384,7 @@ export default function AbacDashboard() {
                 </span>
               : <span className="badge badge-deny">No email</span>}
           </div>
-          <div className="context-item">
-            <span className="stat-label">Client Cert</span>
-            <span className="badge badge-deny">Not presented</span>
-          </div>
+
         </div>
       </div>
 
