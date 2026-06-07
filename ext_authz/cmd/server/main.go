@@ -209,13 +209,6 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		return deny(err.HTTPStatus, err.Message), nil
 	}
 
-	// Step 4: Check for replay attacks using JWT ID
-	if strings.TrimSpace(tokenClaims.JWTID) != "" {
-		if err := s.replayCache.MarkIfNew(tokenClaims.JWTID); err != nil {
-			return mapAuthErr(err), nil
-		}
-	}
-
 	dpopNonce := ""
 	if s.dpopNonceEnabled {
 		dpopNonce = s.currentDPoPNonce()
@@ -379,7 +372,7 @@ func parseDurationEnv(name string, fallback time.Duration) time.Duration {
 	}
 
 	d, err := time.ParseDuration(raw)
-	if err != nil || d <= 0 {
+	if err != nil {
 		return fallback
 	}
 

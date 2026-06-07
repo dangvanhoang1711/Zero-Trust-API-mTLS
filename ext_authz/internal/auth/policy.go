@@ -228,7 +228,7 @@ func (cfg *PolicyConfig) Evaluate(req PolicyRequest) PolicyDecision {
 	matchingRules := cfg.allMatchingRules(req.Path, req.Method)
 	requiredScopes := make([]string, 0, 8)
 
-	if !applyPolicyRule(defaultAction, cfg.Global, inputClaims, inputIdentity, &decision, &requiredScopes, false) {
+	if cfg.Global != nil && !applyPolicyRule(defaultAction, cfg.Global, inputClaims, inputIdentity, &decision, &requiredScopes, false) {
 		return decision
 	}
 
@@ -275,7 +275,11 @@ func (cfg *PolicyConfig) Evaluate(req PolicyRequest) PolicyDecision {
 			return decision
 		}
 
-		// No rule fully matched; apply global + default action only
+		if defaultAction == "deny" {
+			decision.Allowed = false
+			decision.HTTPStatus = http.StatusForbidden
+			decision.Reason = "policy denied (default action)"
+		}
 		decision.RequiredScopes = dedupeList(requiredScopes)
 		return decision
 	}

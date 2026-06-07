@@ -17,6 +17,7 @@ rules:
 
   # ─── JWT required — just needs any valid subject ─────────────────────
   - name: profile-access
+    action: allow
     match:
       path_prefix: "/api/profile"
     conditions:
@@ -25,6 +26,7 @@ rules:
         operator: exists
 
   - name: protected-api
+    action: allow
     match:
       path_prefix: "/api/protected"
     conditions:
@@ -38,6 +40,7 @@ rules:
 
   # ─── User data — weekday only (weekend needs break-glass) ────────────
   - name: user-data-weekday
+    action: allow
     match:
       path_prefix: "/api/user-data"
     conditions:
@@ -54,6 +57,7 @@ rules:
 
   # ─── Director data — director role + business hours (7–22) ─────────────────
   - name: director-business-hours
+    action: allow
     match:
       path_prefix: "/api/director-data"
     conditions:

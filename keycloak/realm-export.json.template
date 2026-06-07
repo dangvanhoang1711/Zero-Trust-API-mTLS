@@ -14,8 +14,12 @@
         "description": "Regular user"
       },
       {
-        "name": "admin",
-        "description": "Administrator"
+        "name": "director",
+        "description": "Director role with elevated access"
+      },
+      {
+        "name": "protected-reader",
+        "description": "Can access protected endpoints"
       }
     ]
   },
@@ -190,20 +194,52 @@
       "realmRoles": ["user"]
     },
     {
-      "username": "admin",
+      "username": "director",
       "enabled": true,
       "emailVerified": true,
-      "email": "admin@zero-trust.local",
-      "firstName": "Admin",
+      "email": "director@zero-trust.local",
+      "firstName": "Director",
       "lastName": "User",
       "credentials": [
         {
           "type": "password",
-          "value": "admin",
+          "value": "director",
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"]
+      "realmRoles": ["director", "user", "protected-reader"]
+    },
+    {
+      "username": "staff",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff@zero-trust.local",
+      "firstName": "Staff",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "staff",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "protected-reader"]
+    },
+    {
+      "username": "reader",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "reader@zero-trust.local",
+      "firstName": "Reader",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "reader",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "protected-reader"]
     }
   ],
   "components": {
