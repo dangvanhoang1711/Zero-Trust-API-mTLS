@@ -75,16 +75,16 @@ static_resources:
                   cert: true
                   uri: true
                   dns: true
-                 route_config:
-                   name: local_route
-                   virtual_hosts:
-                     - name: backend
-                       domains: ["*"]
-                       routes:
-                         - match:
-                             prefix: "/"
-                           route:
-                             cluster: backend_service
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: backend_service
                 http_filters:
                   - name: envoy.filters.http.ext_authz
                     typed_config:
