@@ -16,6 +16,10 @@
       {
         "name": "admin",
         "description": "Administrator"
+      },
+      {
+        "name": "protected-reader",
+        "description": "Can access protected endpoints"
       }
     ]
   },
@@ -203,7 +207,23 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"]
+      "realmRoles": ["admin", "user", "protected-reader"]
+    },
+    {
+      "username": "staff",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "staff@zero-trust.local",
+      "firstName": "Staff",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "staff",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user", "protected-reader"]
     }
   ],
   "components": {
