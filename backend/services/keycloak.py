@@ -1,3 +1,4 @@
+import os
 import time
 
 import requests
@@ -8,6 +9,9 @@ from flask import current_app
 class KeycloakService:
     def __init__(self):
         self._session = requests.Session()
+        ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE", "")
+        if ca_bundle:
+            self._session.verify = ca_bundle
         self._base_url = None
         self._realm = None
         self._client_id = None
