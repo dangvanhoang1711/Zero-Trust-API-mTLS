@@ -14,8 +14,8 @@
         "description": "Regular user"
       },
       {
-        "name": "admin",
-        "description": "Administrator"
+        "name": "director",
+        "description": "Director with full access"
       },
       {
         "name": "protected-reader",
@@ -194,20 +194,20 @@
       "realmRoles": ["user"]
     },
     {
-      "username": "admin",
+      "username": "director",
       "enabled": true,
       "emailVerified": true,
-      "email": "admin@zero-trust.local",
-      "firstName": "Admin",
+      "email": "director@zero-trust.local",
+      "firstName": "Director",
       "lastName": "User",
       "credentials": [
         {
           "type": "password",
-          "value": "admin",
+          "value": "director",
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user", "protected-reader"]
+      "realmRoles": ["director", "user", "protected-reader"]
     },
     {
       "username": "staff",

@@ -127,9 +127,9 @@ def policies():
             "conditionDetails": condition_details,
         })
 
-    relevant_roles = [r for r in roles if r in ("admin", "user")] + ["guest"] if not any(r in roles for r in ("admin", "user")) else [r for r in roles if r in ("admin", "user")]
-    is_admin = "admin" in roles
-    privilege = "HIGH" if is_admin else "LOW"
+    relevant_roles = [r for r in roles if r in ("director", "user")] + ["guest"] if not any(r in roles for r in ("director", "user")) else [r for r in roles if r in ("director", "user")]
+    is_director = "director" in roles
+    privilege = "HIGH" if is_director else "LOW"
 
     return jsonify({
         "version": policy.get("version", "1"),

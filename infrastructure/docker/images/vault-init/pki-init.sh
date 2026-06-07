@@ -79,11 +79,49 @@ provision_keycloak_users() {
     return 0
   fi
 
+  # Create director role if not exists
+  curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/roles \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"director","description":"Director with full access"}' > /dev/null 2>&1 || true
+
   # Create protected-reader role if not exists
   curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/roles \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"protected-reader","description":"Can access protected endpoints"}' > /dev/null 2>&1 || true
+
+  # Create director user if not exists
+  DIRECTOR_EXISTS=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=director" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+  if [ "$DIRECTOR_EXISTS" = "0" ]; then
+    curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/users \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"username":"director","enabled":true,"emailVerified":true,"email":"director@zero-trust.local","firstName":"Director","lastName":"User","credentials":[{"type":"password","value":"director","temporary":false}]}' > /dev/null
+    echo "    Created director user"
+  else
+    echo "    Director user already exists"
+  fi
+
+  DIRECTOR_ID=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=director" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['id'])")
+
+  DIRECTOR_ROLE_JSON=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/roles/director" \
+    -H "Authorization: Bearer $ADMIN_TOKEN")
+  USER_ROLE_JSON=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/roles/user" \
+    -H "Authorization: Bearer $ADMIN_TOKEN")
+  PROTECTED_ROLE_JSON=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/roles/protected-reader" \
+    -H "Authorization: Bearer $ADMIN_TOKEN")
+
+  curl -sk --cacert $CA_CERT -X POST "$KC_URL/admin/realms/$KC_REALM/users/$DIRECTOR_ID/role-mappings/realm" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "[$DIRECTOR_ROLE_JSON,$USER_ROLE_JSON,$PROTECTED_ROLE_JSON]" > /dev/null 2>&1 || true
+  echo "    Director user provisioned with director + user + protected-reader roles"
 
   # Create staff user if not exists
   STAFF_EXISTS=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=staff" \
@@ -104,28 +142,11 @@ provision_keycloak_users() {
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['id'])")
 
-  ROLE_JSON=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/roles/protected-reader" \
-    -H "Authorization: Bearer $ADMIN_TOKEN")
-
   curl -sk --cacert $CA_CERT -X POST "$KC_URL/admin/realms/$KC_REALM/users/$STAFF_ID/role-mappings/realm" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "[$ROLE_JSON]" > /dev/null 2>&1 || true
-
-  echo "    Staff user provisioned with protected-reader role"
-
-  # Assign protected-reader to admin user
-  ADMIN_ID=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=admin" \
-    -H "Authorization: Bearer $ADMIN_TOKEN" \
-    | python3 -c "import json,sys; users=json.load(sys.stdin); print(users[0]['id'] if users else '')")
-
-  if [ -n "$ADMIN_ID" ]; then
-    curl -sk --cacert $CA_CERT -X POST "$KC_URL/admin/realms/$KC_REALM/users/$ADMIN_ID/role-mappings/realm" \
-      -H "Authorization: Bearer $ADMIN_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "[$ROLE_JSON]" > /dev/null 2>&1 || true
-    echo "    Admin user assigned protected-reader role"
-  fi
+    -d "[$USER_ROLE_JSON,$PROTECTED_ROLE_JSON]" > /dev/null 2>&1 || true
+  echo "    Staff user provisioned with user + protected-reader roles"
 }
 provision_keycloak_users
     echo "Certs valid, skipping regeneration"

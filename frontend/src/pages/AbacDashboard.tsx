@@ -153,7 +153,7 @@ function friendlyOperator(op: string): string {
 }
 
 function roleBadgeClass(r: string): string {
-  if (r === 'admin') return 'badge-admin';
+  if (r === 'director') return 'badge-admin';
   if (r === 'user') return 'badge-user';
   if (r === 'protected-reader') return 'badge-protected';
   return 'badge-none';

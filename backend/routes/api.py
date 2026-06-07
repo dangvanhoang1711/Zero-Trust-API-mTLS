@@ -143,10 +143,10 @@ def user_data():
     """, 200
 
 
-@api_bp.route("/admin-data", methods=["GET"])
-@require_role("admin")
-@abac_enforce("admin-business-hours")
-def admin_data():
+@api_bp.route("/director-data", methods=["GET"])
+@require_role("director")
+@abac_enforce("director-business-hours")
+def director_data():
     payload = g.token_payload
     username = payload.get("preferred_username", "unknown")
     import datetime
@@ -154,11 +154,11 @@ def admin_data():
     now = datetime.datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
     return f"""
     <!DOCTYPE html>
-    <html><head><meta charset="utf-8"><title>Admin Data</title></head>
+    <html><head><meta charset="utf-8"><title>Director Data</title></head>
     <body style="font-family: sans-serif; padding: 2rem; background: #f0fdf4; color: #166534;">
-        <h1>✅ Access Success - Admin Data</h1>
+        <h1>✅ Access Success - Director Data</h1>
         <p>Welcome, <strong>{username}</strong>!</p>
-        <p>Rule <strong>admin-business-hours</strong> matched — business hours access granted.</p>
+        <p>Rule <strong>director-business-hours</strong> matched — business hours access granted.</p>
         <ul>
             <li>Current time (VN): <code>{now.strftime("%H:%M:%S %A")}</code></li>
         </ul>
