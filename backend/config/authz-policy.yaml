@@ -25,6 +25,15 @@ rules:
         fact: token.sub
         operator: exists
 
+  - name: abac-policies-access
+    action: allow
+    match:
+      path_prefix: "/api/abac"
+    conditions:
+      constraint:
+        fact: token.sub
+        operator: exists
+
   - name: protected-api
     action: allow
     match:
