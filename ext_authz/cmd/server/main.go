@@ -197,6 +197,9 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		Identity: identity,
 	})
 	if !policyDecision.Allowed {
+		if strings.TrimSpace(rawAuthorization) == "" && tokenRequiredPolicyReason(policyDecision.Reason) {
+			return deny(http.StatusUnauthorized, "Missing Bearer Token"), nil
+		}
 		return deny(policyDecision.HTTPStatus, policyDecision.Reason), nil
 	}
 
@@ -247,6 +250,13 @@ func cookieValue(rawCookie string, name string) string {
 		}
 	}
 	return ""
+}
+
+func tokenRequiredPolicyReason(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(reason, "token claim") ||
+		strings.Contains(reason, "token claims") ||
+		strings.Contains(reason, "missing token")
 }
 
 func buildRequestURL(scheme string, host string, path string) string {
