@@ -61,9 +61,9 @@ static_resources:
                       filename: /etc/envoy/certs/tls.crt
                     private_key:
                       filename: /etc/envoy/certs/tls.key
-                 validation_context:
-                   trusted_ca:
-                     filename: /etc/envoy/certs/ca-chain.crt
+                validation_context:
+                  trusted_ca:
+                    filename: /etc/envoy/certs/ca-chain.crt
           filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
