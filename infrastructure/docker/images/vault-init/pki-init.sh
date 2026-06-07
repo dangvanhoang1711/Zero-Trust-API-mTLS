@@ -113,6 +113,19 @@ provision_keycloak_users() {
     -d "[$ROLE_JSON]" > /dev/null 2>&1 || true
 
   echo "    Staff user provisioned with protected-reader role"
+
+  # Assign protected-reader to admin user
+  ADMIN_ID=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=admin" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | python3 -c "import json,sys; users=json.load(sys.stdin); print(users[0]['id'] if users else '')")
+
+  if [ -n "$ADMIN_ID" ]; then
+    curl -sk --cacert $CA_CERT -X POST "$KC_URL/admin/realms/$KC_REALM/users/$ADMIN_ID/role-mappings/realm" \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "[$ROLE_JSON]" > /dev/null 2>&1 || true
+    echo "    Admin user assigned protected-reader role"
+  fi
 }
 provision_keycloak_users
     echo "Certs valid, skipping regeneration"
