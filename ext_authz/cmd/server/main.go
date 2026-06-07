@@ -101,7 +101,7 @@ func (s *authzServer) Check(_ context.Context, req *authv3.CheckRequest) (*authv
 		requestHost = getHeader(headers, "host")
 	}
 	rawXFCC := getHeader(headers, "x-forwarded-client-cert")
-	rawAuthorization := getHeader(headers, "authorization")
+	rawAuthorization := authorizationFromHeaders(headers)
 
 	if s.configErr != nil {
 		log.Printf("CONFIG ERROR: %v", s.configErr)
@@ -224,6 +224,26 @@ func getHeader(headers map[string]string, name string) string {
 	for key, value := range headers {
 		if strings.EqualFold(key, name) {
 			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func authorizationFromHeaders(headers map[string]string) string {
+	if authz := getHeader(headers, "authorization"); strings.TrimSpace(authz) != "" {
+		return authz
+	}
+	if token := cookieValue(getHeader(headers, "cookie"), "access_token"); token != "" {
+		return "Bearer " + token
+	}
+	return ""
+}
+
+func cookieValue(rawCookie string, name string) string {
+	for _, part := range strings.Split(rawCookie, ";") {
+		keyValue := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(keyValue) == 2 && keyValue[0] == name {
+			return strings.TrimSpace(keyValue[1])
 		}
 	}
 	return ""

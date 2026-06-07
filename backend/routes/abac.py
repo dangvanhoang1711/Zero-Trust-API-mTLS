@@ -42,6 +42,8 @@ def require_jwt(f):
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
         if not token:
+            token = request.cookies.get("access_token", "")
+        if not token:
             return jsonify({"error": "Missing authorization token"}), 401
         try:
             g.token_payload = validator.verify_token(token)

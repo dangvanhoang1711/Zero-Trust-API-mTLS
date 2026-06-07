@@ -83,6 +83,9 @@ def _extract_token():
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         return auth_header[7:]
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
     return session.get("access_token")
 
 

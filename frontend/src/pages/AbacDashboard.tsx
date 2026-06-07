@@ -174,8 +174,6 @@ export default function AbacDashboard() {
   const [jwtPayload, setJwtPayload] = useState<JwtPayload | null>(null);
   const [showRawToken, setShowRawToken] = useState(false);
   const [error, setError] = useState('');
-  const [responses, setResponses] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [ctx, setCtx] = useState(getVietnamTime());
 
   // Update clock every second
@@ -202,24 +200,6 @@ export default function AbacDashboard() {
 
   useEffect(() => { if (isAuthenticated()) fetchPolicies(); }, [fetchPolicies]);
 
-  const callEndpoint = useCallback(async (name: string, endpoint: string) => {
-    setLoading(prev => ({ ...prev, [name]: true }));
-    try {
-      const data = await api.get<unknown>(endpoint);
-      setResponses(prev => ({
-        ...prev,
-        [name]: typeof data === 'string' ? data : JSON.stringify(data, null, 2),
-      }));
-    } catch (err) {
-      setResponses(prev => ({
-        ...prev,
-        [name]: `Error: ${err instanceof Error ? err.message : 'Request failed'}`,
-      }));
-    } finally {
-      setLoading(prev => ({ ...prev, [name]: false }));
-    }
-  }, []);
-
   const allRoles = policy?.user?.roles ?? jwtPayload?.realm_access?.roles ?? [];
   const displayRoles = deriveDisplayRoles(allRoles);
   const matchCount = policy?.rules?.filter(r => r.userMatch).length ?? 0;
@@ -232,7 +212,6 @@ export default function AbacDashboard() {
     { name: 'Protected', path: '/api/protected' },
     { name: 'User Data', path: '/api/user-data' },
     { name: 'Director Data', path: '/api/director-data' },
-    { name: 'JWT Info', path: '/api/jwt-info' },
   ];
 
   return (
@@ -418,25 +397,18 @@ export default function AbacDashboard() {
 
       <div className="card">
         <h2>API Endpoints</h2>
-        <p className="hint">Call backend APIs with the current JWT. Expected denials are shown as errors.</p>
+        <p className="hint">Open backend API pages using your current login session.</p>
         <div className="endpoint-buttons">
           {endpoints.map(ep => (
             <button
               key={ep.name}
               className="btn btn-secondary"
-              onClick={() => callEndpoint(ep.name, ep.path)}
-              disabled={loading[ep.name]}
+              onClick={() => { window.location.href = ep.path; }}
             >
-              {loading[ep.name] ? 'Loading...' : `GET ${ep.name}`}
+              {`Open ${ep.name}`}
             </button>
           ))}
         </div>
-        {Object.entries(responses).map(([name, data]) => (
-          <div key={name} style={{ marginBottom: '0.75rem' }}>
-            <strong style={{ fontSize: '0.875rem' }}>{name}</strong>
-            <div className="response-area">{data}</div>
-          </div>
-        ))}
       </div>
 
       {/* ── Policy Rules table ── */}

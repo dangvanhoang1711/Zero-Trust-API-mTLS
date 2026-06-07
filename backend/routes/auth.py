@@ -19,12 +19,21 @@ def login():
     try:
         token_data = keycloak.get_token(username, password)
         session["access_token"] = token_data["access_token"]
-        return jsonify({
+        response = jsonify({
             "access_token": token_data["access_token"],
             "refresh_token": token_data.get("refresh_token"),
             "expires_in": token_data.get("expires_in"),
             "token_type": token_data.get("token_type"),
         })
+        response.set_cookie(
+            "access_token",
+            token_data["access_token"],
+            max_age=token_data.get("expires_in"),
+            secure=True,
+            httponly=True,
+            samesite="Lax",
+        )
+        return response
     except Exception as e:
         return jsonify({"error": "Authentication failed", "detail": str(e)}), 401
 
@@ -52,4 +61,6 @@ def register():
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
     session.clear()
-    return jsonify({"message": "Logged out successfully"})
+    response = jsonify({"message": "Logged out successfully"})
+    response.delete_cookie("access_token")
+    return response
