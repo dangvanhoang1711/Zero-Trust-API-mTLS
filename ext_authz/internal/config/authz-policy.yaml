@@ -9,6 +9,12 @@ rules:
     match:
       path_prefix: "/api/public"
 
+  # ─── Auth — login/token endpoints, no JWT required ────────────────────
+  - name: auth-access
+    action: allow
+    match:
+      path_prefix: "/api/auth"
+
   # ─── JWT required — just needs any valid subject ─────────────────────
   - name: profile-access
     match:
