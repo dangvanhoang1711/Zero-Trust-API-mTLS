@@ -1,10 +1,11 @@
 version: "1"
-default_action: "allow"
+default_action: "deny"
 
 rules:
 
   # ─── Public — no JWT required, no conditions ──────────────────────────
   - name: public-access
+    action: allow
     match:
       path_prefix: "/api/public"
 
