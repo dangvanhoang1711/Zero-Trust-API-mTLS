@@ -74,7 +74,7 @@ export default function Dashboard() {
     { name: 'Public', path: '/api/public' },
     { name: 'Profile', path: '/api/profile' },
     { name: 'User Data', path: '/api/user-data' },
-    { name: 'Admin Data', path: '/api/admin-data' },
+    { name: 'Director Data', path: '/api/director-data' },
     { name: 'JWT Info', path: '/api/jwt-info' },
   ];
 
@@ -125,7 +125,7 @@ export default function Dashboard() {
               <span style={{ minWidth: '140px', color: '#6b7280', fontStyle: 'italic' }}>realm_access.roles</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                 {(payload.realm_access?.roles ?? []).map(r => (
-                  <span key={r} className={`badge ${r === 'admin' ? 'badge-admin' : r === 'user' ? 'badge-user' : r === 'protected-reader' ? 'badge-allow' : 'badge-none'}`}>
+                  <span key={r} className={`badge ${r === 'director' ? 'badge-admin' : r === 'user' ? 'badge-user' : r === 'protected-reader' ? 'badge-allow' : 'badge-none'}`}>
                     {r}
                   </span>
                 ))}
