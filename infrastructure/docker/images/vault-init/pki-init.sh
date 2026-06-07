@@ -52,7 +52,69 @@ sync_keycloak_realm_export() {
 echo "=== PKI Init: check existing certs ==="
 if [ -f /certs/tls.crt ] && [ -f /certs/client-chain.crt ] && [ -f /certs/ca-chain.crt ]; then
   if openssl x509 -in /certs/tls.crt -noout -subject > /dev/null 2>&1; then
-    sync_keycloak_realm_export
+sync_keycloak_realm_export
+
+echo "=== PKI Init: provision Keycloak users ==="
+provision_keycloak_users() {
+  KC_URL="${KEYCLOAK_URL:-https://keycloak:8443}"
+  KC_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+  KC_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+  KC_REALM="zero-trust"
+  CA_CERT="/certs/ca-chain.crt"
+
+  # Wait for Keycloak
+  for i in $(seq 1 20); do
+    STATUS=$(curl -sk --cacert $CA_CERT -o /dev/null -w "%{http_code}" $KC_URL/realms/$KC_REALM/.well-known/openid-configuration 2>/dev/null)
+    if [ "$STATUS" = "200" ]; then break; fi
+    echo "Waiting for Keycloak ($i)..."
+    sleep 5
+  done
+
+  ADMIN_TOKEN=$(curl -sk --cacert $CA_CERT -X POST $KC_URL/realms/master/protocol/openid-connect/token \
+    -d "client_id=admin-cli&grant_type=password&username=$KC_ADMIN&password=$KC_PASS" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+
+  if [ -z "$ADMIN_TOKEN" ]; then
+    echo "WARNING: could not get Keycloak admin token, skipping user provisioning"
+    return 0
+  fi
+
+  # Create protected-reader role if not exists
+  curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/roles \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"protected-reader","description":"Can access protected endpoints"}' > /dev/null 2>&1 || true
+
+  # Create staff user if not exists
+  STAFF_EXISTS=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=staff" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+  if [ "$STAFF_EXISTS" = "0" ]; then
+    curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/users \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"username":"staff","enabled":true,"emailVerified":true,"email":"staff@zero-trust.local","firstName":"Staff","lastName":"User","credentials":[{"type":"password","value":"staff","temporary":false}]}' > /dev/null
+    echo "    Created staff user"
+  else
+    echo "    Staff user already exists"
+  fi
+
+  STAFF_ID=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=staff" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['id'])")
+
+  ROLE_JSON=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/roles/protected-reader" \
+    -H "Authorization: Bearer $ADMIN_TOKEN")
+
+  curl -sk --cacert $CA_CERT -X POST "$KC_URL/admin/realms/$KC_REALM/users/$STAFF_ID/role-mappings/realm" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "[$ROLE_JSON]" > /dev/null 2>&1 || true
+
+  echo "    Staff user provisioned with protected-reader role"
+}
+provision_keycloak_users
     echo "Certs valid, skipping regeneration"
     exit 0
   fi
