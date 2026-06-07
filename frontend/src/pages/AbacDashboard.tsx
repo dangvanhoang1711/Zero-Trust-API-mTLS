@@ -215,7 +215,7 @@ export default function AbacDashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>ABAC Dashboard</h2>
             <span className={`badge badge-privilege-${isPrivilegeHigh ? 'high' : 'low'}`}>
-              {isPrivilegeHigh ? 'ADMIN PRIVILEGE' : 'STANDARD USER'}
+              {isPrivilegeHigh ? 'DIRECTOR PRIVILEGE' : 'STANDARD USER'}
             </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
