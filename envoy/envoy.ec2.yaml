@@ -61,9 +61,9 @@ static_resources:
                       filename: /etc/envoy/certs/tls.crt
                     private_key:
                       filename: /etc/envoy/certs/tls.key
-                validation_context:
-                  trusted_ca:
-                    filename: /etc/envoy/certs/trust/intermediate-ca.crt
+                 validation_context:
+                   trusted_ca:
+                     filename: /etc/envoy/certs/ca-chain.crt
           filters:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
@@ -75,20 +75,16 @@ static_resources:
                   cert: true
                   uri: true
                   dns: true
-                route_config:
-                  name: local_route
-                  virtual_hosts:
-                    - name: backend
-                      domains: ["*"]
-                      routes:
-                        - match:
-                            prefix: "/api/protected"
-                          route:
-                            cluster: protected_api_service
-                        - match:
-                            prefix: "/"
-                          route:
-                            cluster: backend_service
+                 route_config:
+                   name: local_route
+                   virtual_hosts:
+                     - name: backend
+                       domains: ["*"]
+                       routes:
+                         - match:
+                             prefix: "/"
+                           route:
+                             cluster: backend_service
                 http_filters:
                   - name: envoy.filters.http.ext_authz
                     typed_config:
