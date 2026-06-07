@@ -258,8 +258,8 @@ body {
 .rules-table td:nth-child(1) { width: 170px; white-space: nowrap; }
 .rules-table td:nth-child(2) { width: 180px; white-space: nowrap; }
 .rules-table td:nth-child(3) { min-width: 300px; }
-.rules-table td:nth-child(4) { width: 80px; text-align: center; }
-.rules-table td:nth-child(5) { width: 100px; text-align: center; }
+.rules-table td:nth-child(4) { width: 95px; text-align: center; white-space: nowrap; }
+.rules-table td:nth-child(5) { width: 110px; text-align: center; white-space: nowrap; }
 
 .rules-table th:nth-child(4),
 .rules-table th:nth-child(5) { text-align: center; }
