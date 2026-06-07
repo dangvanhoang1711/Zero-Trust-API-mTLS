@@ -45,10 +45,10 @@ rules:
               value: [0, 6]
 
 
-  # ─── Admin data — admin role + business hours (7–22) ─────────────────
-  - name: admin-business-hours
+  # ─── Director data — director role + business hours (7–22) ─────────────────
+  - name: director-business-hours
     match:
-      path_prefix: "/api/admin-data"
+      path_prefix: "/api/director-data"
     conditions:
       required_scopes:
         - "email"
@@ -56,7 +56,7 @@ rules:
         all:
           - fact: token.realm_access.roles
             operator: contains
-            value: admin
+            value: director
           - fact: request.time.hour
             operator: between
             value: [7, 22]
