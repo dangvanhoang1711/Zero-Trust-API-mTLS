@@ -49,22 +49,23 @@ body {
 }
 
 .main {
-  max-width: 960px;
+  max-width: 1280px;
   margin: 2rem auto;
-  padding: 0 1rem;
+  padding: 0 1.5rem;
 }
 
 .card {
   background: #fff;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   margin-bottom: 1rem;
 }
 
 .card h2 {
   margin-bottom: 1rem;
   font-size: 1.125rem;
+  font-weight: 600;
 }
 
 .form-group {
@@ -197,6 +198,7 @@ body {
   font-size: 0.8125rem;
   color: #6b7280;
   margin-bottom: 0.75rem;
+  line-height: 1.5;
 }
 
 .dim {
@@ -209,40 +211,58 @@ body {
   font-size: 0.8125rem;
 }
 
-/* Tables */
+/* ─── Tables ────────────────────────────────────────── */
 .table-wrap {
   overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
 }
 
 .abac-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
+  min-width: 700px;
 }
 
 .abac-table th {
   text-align: left;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 1rem;
   background: #f9fafb;
   border-bottom: 2px solid #e5e7eb;
   font-weight: 600;
   white-space: nowrap;
+  color: #374151;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .abac-table td {
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid #f3f4f6;
   vertical-align: top;
-  word-break: break-word;
-  white-space: normal;
+}
+
+.abac-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .abac-table .label {
   font-weight: 500;
   color: #4b5563;
-  width: 140px;
+  width: 160px;
   white-space: nowrap;
 }
+
+.rules-table td:nth-child(1) { width: 170px; white-space: nowrap; }
+.rules-table td:nth-child(2) { width: 180px; white-space: nowrap; }
+.rules-table td:nth-child(3) { min-width: 300px; }
+.rules-table td:nth-child(4) { width: 80px; text-align: center; }
+.rules-table td:nth-child(5) { width: 100px; text-align: center; }
+
+.rules-table th:nth-child(4),
+.rules-table th:nth-child(5) { text-align: center; }
 
 .row-match {
   background: #f0fdf4;
@@ -252,15 +272,20 @@ body {
   background: #fafafa;
 }
 
-/* Badges */
+.rules-table tbody tr:hover {
+  filter: brightness(0.97);
+}
+
+/* ─── Badges ─────────────────────────────────────────── */
 .badge {
   display: inline-block;
-  padding: 0.125rem 0.5rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 9999px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .badge-allow {
@@ -288,6 +313,11 @@ body {
   color: #6b7280;
 }
 
+.badge-protected {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .badge-privilege-high {
   display: inline-block;
   padding: 0.35rem 0.75rem;
@@ -312,39 +342,151 @@ body {
   letter-spacing: 0.05em;
 }
 
-/* Tags */
+/* ─── Tags ───────────────────────────────────────────── */
 .tag {
   display: inline-block;
-  padding: 0.0625rem 0.375rem;
+  padding: 0.1rem 0.4rem;
   border-radius: 3px;
-  font-size: 0.6875rem;
-  background: #e5e7eb;
-  color: #4b5563;
-  font-weight: 500;
+  font-size: 0.65rem;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-weight: 600;
   font-family: 'Fira Code', 'Courier New', monospace;
+  margin-right: 0.25rem;
 }
 
-.tag-method {
-  background: #d1d5db;
+/* ─── Stats / Context ────────────────────────────────── */
+.stat-label {
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-bottom: 0.2rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.75rem;
+}
+
+.context-item {
+  background: #f9fafb;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* ─── Condition rows ─────────────────────────────────── */
+.cond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cond-row {
+  padding: 0.5rem 0.625rem;
+  border-radius: 6px;
+  border-left: 3px solid;
+}
+
+.cond-pass {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.cond-fail {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+/* Each line (Required / Your value) is its own flex row */
+.cond-req,
+.cond-act {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  flex-wrap: nowrap;
+}
+
+.cond-req {
+  margin-bottom: 0.2rem;
+}
+
+/* "Required:" / "Your value:" label */
+.cond-label {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  font-style: italic;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 72px;
+}
+
+/* fact name: JWT Subject / User Roles … */
+.cond-text {
+  font-weight: 600;
   color: #1f2937;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-/* Constraint renderer */
-.constraint-group {
-  font-size: 0.75rem;
-  color: #374151;
-}
-
-.constraint-leaf {
-  font-size: 0.75rem;
-  color: #374151;
-}
-
-.constraint-leaf strong {
+/* operator: contains / exists / between … */
+.cond-op {
+  font-size: 0.68rem;
   color: #6366f1;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-/* Eval results */
+/* code value pill */
+.cond-val {
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* pass/fail circle */
+.cond-result {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cond-result-pass {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.cond-result-fail {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ─── Eval / matrix helpers ──────────────────────────── */
 .eval-result {
   padding: 0.75rem;
   border-radius: 6px;
@@ -375,138 +517,20 @@ body {
   margin-top: 0.125rem;
 }
 
-/* Buttons for test results */
 .btn-ok {
   background: #16a34a;
   color: #fff;
 }
-
-.btn-ok:hover {
-  background: #15803d;
-}
+.btn-ok:hover { background: #15803d; }
 
 .btn-blocked {
   background: #dc2626;
   color: #fff;
 }
+.btn-blocked:hover { background: #b91c1c; }
 
-.btn-blocked:hover {
-  background: #b91c1c;
-}
-
-/* Rules table hover */
-.rules-table tbody tr:hover {
-  filter: brightness(0.97);
-}
-
-/* Matrix */
 .matrix-table td {
   vertical-align: middle;
-}
-
-/* Stats */
-.stat-label {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-bottom: 0.125rem;
-}
-
-/* Context grid */
-.context-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.context-item {
-  background: #f9fafb;
-  padding: 0.75rem;
-  border-radius: 6px;
-  border: 1px solid #f3f4f6;
-}
-
-/* Condition list */
-.cond-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.cond-row {
-  padding: 0.5rem;
-  border-radius: 6px;
-  border-left: 3px solid;
-}
-
-.cond-pass {
-  background: #f0fdf4;
-  border-color: #86efac;
-}
-
-.cond-fail {
-  background: #fef2f2;
-  border-color: #fca5a5;
-}
-
-.cond-req, .cond-act {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex-wrap: wrap;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-
-.cond-label {
-  font-size: 0.7rem;
-  color: #6b7280;
-  font-style: italic;
-  margin-right: 0.125rem;
-}
-
-.cond-text {
-  font-weight: 500;
-  color: #374151;
-  margin-right: 0.25rem;
-}
-
-.cond-op {
-  font-size: 0.7rem;
-  color: #6366f1;
-  font-weight: 600;
-  text-transform: uppercase;
-  margin: 0 0.25rem;
-}
-
-.cond-val {
-  font-family: 'Fira Code', 'Courier New', monospace;
-  font-size: 0.75rem;
-  background: rgba(0,0,0,0.05);
-  padding: 0.0625rem 0.375rem;
-  border-radius: 3px;
-  margin: 0 0.125rem;
-  white-space: nowrap;
-}
-
-.cond-result {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 50%;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.cond-result-pass {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.cond-result-fail {
-  background: #fee2e2;
-  color: #991b1b;
 }
 
 .cond-mini-dot {
@@ -517,10 +541,5 @@ body {
   flex-shrink: 0;
 }
 
-.dot-pass {
-  background: #16a34a;
-}
-
-.dot-fail {
-  background: #dc2626;
-}
+.dot-pass { background: #16a34a; }
+.dot-fail { background: #dc2626; }
