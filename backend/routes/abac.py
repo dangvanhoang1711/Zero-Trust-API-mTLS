@@ -127,7 +127,7 @@ def policies():
             "conditionDetails": condition_details,
         })
 
-    relevant_roles = [r for r in roles if r in ("director", "user")] + ["guest"] if not any(r in roles for r in ("director", "user")) else [r for r in roles if r in ("director", "user")]
+    relevant_roles = [r for r in roles if r in ("director", "user", "protected-reader")] or ["guest"]
     is_director = "director" in roles
     privilege = "HIGH" if is_director else "LOW"
 
