@@ -2,7 +2,6 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     ports:
-      - "8080:8080"
       - "8443:8443"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
@@ -99,7 +98,7 @@ services:
   backend:
     build: ../../backend
     ports:
-      - "8444:8443"
+      - "8080:8443"
     volumes:
       - ../../envoy/certs:/certs
     environment:
