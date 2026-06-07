@@ -9,6 +9,12 @@ from services.jwt_validator import JWKSValidator
 abac_bp = Blueprint("abac", __name__, url_prefix="/api/abac")
 validator = JWKSValidator()
 
+_HIDDEN_POLICY_RULES = {
+    "public-access",
+    "auth-endpoints",
+    "abac-policies-access",
+}
+
 _POLICY_PATH = os.environ.get(
     "ABAC_POLICY_PATH",
     "/app/config/authz-policy.yaml",
@@ -113,6 +119,9 @@ def policies():
 
     enriched = []
     for rule in rules:
+        if rule.get("name") in _HIDDEN_POLICY_RULES:
+            continue
+
         match = rule.get("match", {})
         conditions = rule.get("conditions", {})
         action = rule.get("action", "allow")

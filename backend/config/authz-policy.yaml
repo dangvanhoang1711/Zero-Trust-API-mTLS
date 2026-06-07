@@ -9,8 +9,8 @@ rules:
     match:
       path_prefix: "/api/public"
 
-  # ─── Auth — login/token endpoints, no JWT required ────────────────────
-  - name: auth-access
+  # ─── Auth — login/register endpoints, no JWT required ─────────────────
+  - name: auth-endpoints
     action: allow
     match:
       path_prefix: "/api/auth"
