@@ -327,12 +327,13 @@ def _evaluate_constraint_detailed(constraint, claims, roles, path=""):
         if not isinstance(items, list) or len(items) == 0:
             return True, []
         all_details = []
+        all_ok = True
         for i, item in enumerate(items):
             ok, sub_details = _evaluate_constraint_detailed(item, claims, roles, f"{path}.all[{i}]")
             all_details.extend(sub_details)
             if not ok:
-                return False, all_details
-        return True, all_details
+                all_ok = False
+        return all_ok, all_details
 
     if "any" in constraint:
         items = constraint["any"]
