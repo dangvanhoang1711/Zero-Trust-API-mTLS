@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-PUBLIC_HOST="${PUBLIC_HOST:-13.238.159.245}"
+PUBLIC_HOST="${PUBLIC_HOST:-3.106.242.241}"
 PUBLIC_PRIVATE_IP="${PUBLIC_PRIVATE_IP:-10.0.5.131}"
 PRIVATE_HOST="${PRIVATE_HOST:-10.0.2.27}"
 PUBLIC_USER="${PUBLIC_USER:-ubuntu}"
@@ -87,7 +87,7 @@ remote_private_via_public "mkdir -p '$PRIVATE_REMOTE_DIR'"
 remote_public "cat /tmp/zero-trust.tar.gz | ssh -i ~/.ssh/ec2_key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PRIVATE_USER@$PRIVATE_HOST 'tar -xzf - -C $PRIVATE_REMOTE_DIR'"
 
 log "Deploying service stack on $PRIVATE_HOST"
-remote_private_via_public "cd '$PRIVATE_REMOTE_DIR' && PUBLIC_EC2_PRIVATE_IP='$PUBLIC_PRIVATE_IP' PUBLIC_EC2_PUBLIC_IP='$PUBLIC_HOST' PRIVATE_EC2_PRIVATE_IP='$PRIVATE_HOST' KEYCLOAK_HOSTNAME='$PRIVATE_HOST' KEYCLOAK_HTTP_HOST_PORT='8080' KEYCLOAK_HTTPS_HOST_PORT='8443' JWT_ISSUER='https://$PRIVATE_HOST:8443/realms/zero-trust' S3_BUCKET='$S3_BUCKET' bash scripts/deploy-private.sh --skip-pki"
+remote_private_via_public "cd '$PRIVATE_REMOTE_DIR' && PUBLIC_EC2_PRIVATE_IP='$PUBLIC_PRIVATE_IP' PUBLIC_EC2_PUBLIC_IP='$PUBLIC_HOST' PRIVATE_EC2_PRIVATE_IP='$PRIVATE_HOST' KEYCLOAK_HOSTNAME='keycloak' KEYCLOAK_HTTP_HOST_PORT='8080' KEYCLOAK_HTTPS_HOST_PORT='8443' JWT_ISSUER='https://keycloak:8443/realms/zero-trust' S3_BUCKET='$S3_BUCKET' bash scripts/deploy-private.sh --skip-pki"
 
 log "Syncing certificates from EC2-Services to EC2-Envoy"
 remote_public "mkdir -p '$PUBLIC_REMOTE_DIR/envoy/certs/trust' && ssh -i ~/.ssh/ec2_key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PRIVATE_USER@$PRIVATE_HOST 'cd $PRIVATE_REMOTE_DIR && tar -czf - envoy/certs/server.crt envoy/certs/server.key envoy/certs/server-chain.crt envoy/certs/tls.crt envoy/certs/tls.key envoy/certs/root-ca.crt envoy/certs/intermediate-ca.crt envoy/certs/ca-chain.crt envoy/certs/ca.crt envoy/certs/client.crt envoy/certs/client.key envoy/certs/client-chain.crt envoy/certs/attacker-client.crt envoy/certs/attacker-client.key envoy/certs/attacker-client-chain.crt envoy/certs/trust/root-ca.crt envoy/certs/trust/intermediate-ca.crt' | tar -xzf - -C '$PUBLIC_REMOTE_DIR'"

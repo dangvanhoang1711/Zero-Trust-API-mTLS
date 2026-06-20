@@ -144,8 +144,8 @@ Expected result: `HTTP 200` with the backend status payload.
 ### Public site works but protected requests fail
 
 - Confirm EC2-Envoy can reach `10.0.2.27` on `8443`, `50051`, `8200`, and `6379`
-- Check Envoy logs: `docker compose -f infrastructure/docker/docker-compose.public.yml logs --tail=80 envoy`
-- Check ext_authz logs: `docker compose -f infrastructure/docker/docker-compose.private.yml logs --tail=80 ext-authz`
+- Check Envoy logs: `docker compose -f infrastructure/docker/docker-compose.envoy.yml logs --tail=80 envoy`
+- Check ext_authz logs: `docker compose -f infrastructure/docker/docker-compose.service.yml logs --tail=80 ext-authz`
 
 ### Browser shows certificate warnings
 

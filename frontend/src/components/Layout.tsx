@@ -21,7 +21,6 @@ export default function Layout({ children }: LayoutProps) {
         <nav className="nav">
           {authed ? (
             <>
-              <Link to="/dashboard">Dashboard</Link>
               <Link to="/abac">ABAC Dashboard</Link>
               <button onClick={handleLogout}>Logout</button>
             </>

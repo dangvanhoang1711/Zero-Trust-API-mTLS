@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # === Zero-Trust Services Deploy (EC2-Services) ===
-# Deploys Keycloak, Vault, Redis, ext-authz, and pki-init from docker-compose.private.yml
-# Usage: ./deploy-private.sh [--skip-pki]
+# Deploys Keycloak, Vault, Redis, ext-authz, backend, and pki-init from docker-compose.service.yml
+# Usage: bash scripts/deploy-service.sh [--skip-pki]
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-LOG_FILE="${LOG_FILE:-$HOME/zero-trust-deploy-private.log}"
-COMPOSE_FILE="$PROJECT_ROOT/infrastructure/docker/docker-compose.private.yml"
+LOG_FILE="${LOG_FILE:-$HOME/zero-trust-deploy-service.log}"
+COMPOSE_FILE="$PROJECT_ROOT/infrastructure/docker/docker-compose.service.yml"
 
 S3_BUCKET="${S3_BUCKET:-zero-trust-certs-$(date +%Y%m%d)}"
 CERT_DIR="$PROJECT_ROOT/envoy/certs"
@@ -119,6 +119,9 @@ fi
 info "=== Step 3: Deploying private infrastructure ==="
 docker_compose -f "$COMPOSE_FILE" pull
 docker_compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+# Force-recreate vault so it picks up new TLS certs from vault-tls-init
+info "  Force-recreating Vault to apply new TLS certs..."
+docker_compose -f "$COMPOSE_FILE" up -d --force-recreate vault
 
 # --- 4. Wait for Keycloak health ---
 info "=== Step 4: Waiting for Keycloak ==="
@@ -141,9 +144,9 @@ done
 # --- 5. Wait for Vault health ---
 info "=== Step 5: Waiting for Vault ==="
 for i in $(seq 1 18); do
-  if curl -sf --connect-timeout 3 --max-time 5 \
+  if curl -sk --connect-timeout 3 --max-time 5 \
     --cacert "$CERT_DIR/vault-ca.crt" \
-    "https://localhost:8200/v1/sys/health" > /dev/null 2>&1; then
+    "https://localhost:8200/v1/sys/health" -o /dev/null -w "%{http_code}" 2>/dev/null | grep -q '200\|429\|503'; then
     info "  Vault is healthy"
     break
   fi

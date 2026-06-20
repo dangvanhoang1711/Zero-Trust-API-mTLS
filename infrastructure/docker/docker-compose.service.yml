@@ -12,6 +12,7 @@ services:
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTPS_CERTIFICATE_FILE: "/certs/tls.crt"
       KC_HTTPS_CERTIFICATE_KEY_FILE: "/certs/tls.key"
+      KC_ACCESS_TOKEN_LIFESPAN: "120"
       JAVA_OPTS: "-Xms128m -Xmx512m -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=256m"
     volumes:
       - ../../keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json
@@ -112,7 +113,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
       SECRET_KEY: "${SECRET_KEY:-dev-secret-change-me}"
       REQUESTS_CA_BUNDLE: "/certs/ca-chain.crt"
-      FRONTEND_ORIGINS: "https://13.238.159.245,https://10.0.5.131"
+      FRONTEND_ORIGINS: "https://3.106.242.241,https://10.0.5.131"
     depends_on:
       keycloak:
         condition: service_healthy
@@ -138,6 +139,7 @@ services:
       JWT_ISSUER: "https://keycloak:8443/realms/zero-trust"
       JWT_AUDIENCE: "api-gateway"
       JWKS_URL: "https://keycloak:8443/realms/zero-trust/protocol/openid-connect/certs"
+      REPLAY_TTL: "0s"
       REPLAY_REDIS_URL: "redis://redis:6379"
       AUTHZ_POLICY_FILE: "/etc/ext-authz/config/authz-policy.yaml"
       VAULT_ADDR: "https://vault:8200"
@@ -179,7 +181,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: "${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
       SERVER_CERT_DNS_NAMES: "${SERVER_CERT_DNS_NAMES:-localhost,envoy,backend,protected-api,ext-authz,keycloak}"
       SERVER_CERT_IP_SANS: "${SERVER_CERT_IP_SANS:-127.0.0.1,10.0.2.27,10.0.5.131}"
-      SERVER_CERT_EXTRA_IP_SANS: "${SERVER_CERT_EXTRA_IP_SANS:-13.238.159.245,3.106.196.141}"
+      SERVER_CERT_EXTRA_IP_SANS: "${SERVER_CERT_EXTRA_IP_SANS:-3.106.242.241,15.134.131.126}"
     entrypoint: ["/usr/local/bin/pki-init.sh"]
     deploy:
       resources:

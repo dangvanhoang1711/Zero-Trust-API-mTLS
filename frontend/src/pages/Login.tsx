@@ -15,7 +15,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(username, password);
-      navigate('/dashboard');
+      navigate('/abac');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

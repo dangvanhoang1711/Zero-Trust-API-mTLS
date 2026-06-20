@@ -49,12 +49,6 @@ sync_keycloak_realm_export() {
   echo "    demo-client-mismatch thumbprint: ${mismatch_thumbprint}"
 }
 
-echo "=== PKI Init: check existing certs ==="
-if [ -f /certs/tls.crt ] && [ -f /certs/client-chain.crt ] && [ -f /certs/ca-chain.crt ]; then
-  if openssl x509 -in /certs/tls.crt -noout -subject > /dev/null 2>&1; then
-sync_keycloak_realm_export
-
-echo "=== PKI Init: provision Keycloak users ==="
 provision_keycloak_users() {
   KC_URL="${KEYCLOAK_URL:-https://keycloak:8443}"
   KC_ADMIN="${KEYCLOAK_ADMIN:-admin}"
@@ -62,7 +56,6 @@ provision_keycloak_users() {
   KC_REALM="zero-trust"
   CA_CERT="/certs/ca-chain.crt"
 
-  # Wait for Keycloak
   for i in $(seq 1 20); do
     STATUS=$(curl -sk --cacert $CA_CERT -o /dev/null -w "%{http_code}" $KC_URL/realms/$KC_REALM/.well-known/openid-configuration 2>/dev/null)
     if [ "$STATUS" = "200" ]; then break; fi
@@ -79,19 +72,16 @@ provision_keycloak_users() {
     return 0
   fi
 
-  # Create director role if not exists
   curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/roles \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"director","description":"Director with full access"}' > /dev/null 2>&1 || true
 
-  # Create protected-reader role if not exists
   curl -sk --cacert $CA_CERT -X POST $KC_URL/admin/realms/$KC_REALM/roles \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"protected-reader","description":"Can access protected endpoints"}' > /dev/null 2>&1 || true
 
-  # Create director user if not exists
   DIRECTOR_EXISTS=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=director" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
@@ -123,7 +113,6 @@ provision_keycloak_users() {
     -d "[$DIRECTOR_ROLE_JSON,$USER_ROLE_JSON,$PROTECTED_ROLE_JSON]" > /dev/null 2>&1 || true
   echo "    Director user provisioned with director + user + protected-reader roles"
 
-  # Create staff user if not exists
   STAFF_EXISTS=$(curl -sk --cacert $CA_CERT "$KC_URL/admin/realms/$KC_REALM/users?username=staff" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
@@ -148,8 +137,12 @@ provision_keycloak_users() {
     -d "[$USER_ROLE_JSON,$PROTECTED_ROLE_JSON]" > /dev/null 2>&1 || true
   echo "    Staff user provisioned with user + protected-reader roles"
 }
-provision_keycloak_users
-    echo "Certs valid, skipping regeneration"
+
+echo "=== PKI Init: check existing certs ==="
+if [ -f /certs/tls.crt ] && [ -f /certs/client-chain.crt ] && [ -f /certs/ca-chain.crt ]; then
+  if openssl x509 -in /certs/tls.crt -noout -subject > /dev/null 2>&1; then
+sync_keycloak_realm_export
+    echo "Certs valid, skipping regeneration (user provisioning happens on first full run)"
     exit 0
   fi
 fi

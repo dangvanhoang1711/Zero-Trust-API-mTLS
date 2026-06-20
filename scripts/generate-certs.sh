@@ -13,7 +13,7 @@ CERTS_DIR="$PROJECT_ROOT/envoy/certs"
 ENVOY_TRUST_DIR="$CERTS_DIR/trust"
 KEYCLOAK_DIR="$PROJECT_ROOT/keycloak"
 VAULT_SCRIPTS="$PROJECT_ROOT/vault/scripts"
-COMPOSE_FILE="$PROJECT_ROOT/infrastructure/docker/docker-compose.private.yml"
+COMPOSE_FILE="$PROJECT_ROOT/infrastructure/docker/docker-compose.service.yml"
 
 : "${VAULT_ADDR:=https://localhost:8200}"
 : "${VAULT_TOKEN:=root}"
